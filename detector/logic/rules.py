@@ -134,14 +134,19 @@ def check_epi_violations(detections: list[dict]) -> list[dict]:
     Cada detección es un dict con al menos: 
         {"class_name": str, "bbox": [x1,y1,x2,y2], "confidence": float}
 
-    Retorna lista de dicts: {"type": "NO_HARDHAT"|"NO_VEST", "track_id": int, "bbox": [...]}
+    Retorna lista de dicts: {"type": "NO_HARDHAT"|"NO_VEST"|"NO_MASK", "track_id": int, "bbox": [...]}
     """
     violations = []
 
     for det in detections:
         cls = det.get("class_name", "").upper().replace(" ", "_").replace("-", "_")
-        if cls in ("NO_HARDHAT", "NO_SAFETY_VEST", "NO_VEST"):
-            alert_type = "NO_HARDHAT" if "HARDHAT" in cls else "NO_VEST"
+        if cls in ("NO_HARDHAT", "NO_SAFETY_VEST", "NO_VEST", "NO_MASK"):
+            if "HARDHAT" in cls:
+                alert_type = "NO_HARDHAT"
+            elif "MASK" in cls:
+                alert_type = "NO_MASK"
+            else:
+                alert_type = "NO_VEST"
             violations.append({
                 "type": alert_type,
                 "track_id": det.get("track_id", 0),

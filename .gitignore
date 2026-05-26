@@ -13,6 +13,20 @@ __pycache__/
 *.db
 *.sqlite3
 
+# Model weights (too large for GitHub)
+*.pt
+*.onnx
+
+# Kaggle dataset
+archive/
+archive.zip
+
+# Test output
+resultados_test/
+
+# Node.js
+node_modules/
+
 # OS generated files
 .DS_Store
 Thumbs.db

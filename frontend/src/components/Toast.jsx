@@ -6,12 +6,14 @@ import { useState, useEffect } from 'react'
 const TYPE_EMOJIS = {
   NO_HARDHAT: '🪖',
   NO_VEST: '🦺',
+  NO_MASK: '😷',
   RESTRICTED_ZONE: '⛔',
 }
 
 const TYPE_MSG = {
   NO_HARDHAT: 'Trabajador sin casco detectado',
   NO_VEST: 'Trabajador sin chaleco detectado',
+  NO_MASK: 'Trabajador sin mascarilla detectado',
   RESTRICTED_ZONE: 'Intrusión en zona restringida',
 }
 

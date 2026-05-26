@@ -17,6 +17,23 @@
  Webcam / Fichero / RTSP
 ```
 
+## 🧠 Modelo YOLO – Clases del Entrenamiento
+
+El modelo `models/best.pt` fue entrenado con el dataset **Construction Site Safety** (Roboflow) y detecta **10 clases**:
+
+| Índice | Clase | Categoría |
+|--------|-------|-----------|
+| 0 | `Hardhat` | EPI ✅ |
+| 1 | `Mask` | EPI ✅ |
+| 2 | `NO-Hardhat` | **Infracción** 🚨 |
+| 3 | `NO-Mask` | **Infracción** 🚨 |
+| 4 | `NO-Safety Vest` | **Infracción** 🚨 |
+| 5 | `Person` | Detección 👤 |
+| 6 | `Safety Cone` | Objeto 🟠 |
+| 7 | `Safety Vest` | EPI ✅ |
+| 8 | `machinery` | Objeto 🏗️ |
+| 9 | `vehicle` | Objeto 🚜 |
+
 ## 🚀 Puesta en Marcha (Desarrollo Local)
 
 ### 1. Backend
@@ -56,7 +73,8 @@ SQLite (`edifica.db`) — 100% offline, sin servidor externo.
 
 | Tabla | Campos principales |
 |-------|-------------------|
-| `alerts` | id, timestamp, type, camera_id, snapshot_path, resolved |
+| `alerts` | id, timestamp, type, camera_id, snapshot_path, resolved, employee_id |
+| `employees` | id, code, name, role, active, created_at |
 | `restricted_zones` | id, name, polygon_points (JSON) |
 
 ## 📡 API Endpoints
@@ -68,6 +86,9 @@ SQLite (`edifica.db`) — 100% offline, sin servidor externo.
 | `PATCH` | `/api/alerts/{id}` | Resolver/reabrir alerta |
 | `GET` | `/api/stats` | Estadísticas del dashboard |
 | `WS` | `/api/alerts/ws` | WebSocket tiempo real |
+| `GET` | `/api/employees` | Listar empleados |
+| `POST` | `/api/employees` | Registrar empleado |
+| `DELETE` | `/api/employees/{id}` | Eliminar empleado |
 | `GET` | `/api/zones` | Listar zonas restringidas |
 | `POST` | `/api/zones` | Crear zona restringida |
 | `DELETE` | `/api/zones/{id}` | Eliminar zona |
@@ -80,8 +101,9 @@ SQLite (`edifica.db`) — 100% offline, sin servidor externo.
 
 ## 📋 Tipos de Alerta
 
-| Tipo | Descripción |
-|------|-------------|
-| `NO_HARDHAT` | Trabajador sin casco de seguridad |
-| `NO_VEST` | Trabajador sin chaleco reflectante |
-| `RESTRICTED_ZONE` | Persona detectada en zona restringida |
+| Tipo | Clase YOLO | Descripción |
+|------|-----------|-------------|
+| `NO_HARDHAT` | `NO-Hardhat` (2) | Trabajador sin casco de seguridad |
+| `NO_VEST` | `NO-Safety Vest` (4) | Trabajador sin chaleco reflectante |
+| `NO_MASK` | `NO-Mask` (3) | Trabajador sin mascarilla de protección |
+| `RESTRICTED_ZONE` | — (regla geométrica) | Persona detectada en zona restringida |

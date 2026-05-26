@@ -37,7 +37,7 @@ from logic.rules import (
 # Configuración por defecto
 # ---------------------------------------------------------------------------
 
-DEFAULT_MODEL = "yolov8n.pt"  # Se descargará automáticamente si no existe
+DEFAULT_MODEL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models", "best.pt")
 BACKEND_URL = "http://localhost:8000"
 CAMERA_ID = "CAM-01"
 CONFIDENCE_THRESHOLD = 0.40

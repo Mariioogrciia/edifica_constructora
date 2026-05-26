@@ -9,6 +9,9 @@ Endpoints:
   GET  /api/zones            → Listar zonas restringidas
   POST /api/zones            → Crear zona restringida
   DELETE /api/zones/{id}     → Eliminar zona restringida
+  GET  /api/employees        → Listar empleados
+  POST /api/employees        → Crear empleado
+  DELETE /api/employees/{id} → Eliminar empleado
   GET  /api/stats            → Estadísticas agregadas para el dashboard
 """
 
@@ -27,6 +30,7 @@ from fastapi import (
     Depends,
     FastAPI,
     File,
+    HTTPException,
     Query,
     UploadFile,
     WebSocket,
@@ -38,11 +42,13 @@ from sqlalchemy import desc, func, select, update
 
 from database import async_session, get_db, init_db
 from models import (
-    AlertCreate,
     AlertORM,
     AlertOut,
     AlertResolve,
     AlertType,
+    EmployeeCreate,
+    EmployeeORM,
+    EmployeeOut,
     RestrictedZoneORM,
     ZoneCreate,
     ZoneOut,
@@ -100,7 +106,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title="Edifica Constructora – Backend de Seguridad",
     description="API Edge-First para gestión de alertas de seguridad laboral.",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -122,8 +128,9 @@ app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(os.path.
 
 @app.post("/api/alerts", response_model=AlertOut, status_code=201)
 async def create_alert(
-    alert_type: str = Query(..., alias="type", description="Tipo de alerta: NO_HARDHAT | NO_VEST | RESTRICTED_ZONE"),
+    alert_type: str = Query(..., alias="type", description="Tipo de alerta: NO_HARDHAT | NO_VEST | NO_MASK | RESTRICTED_ZONE"),
     camera_id: str = Query("CAM-01"),
+    employee_id: Optional[int] = Query(None, description="ID del empleado asociado (opcional)"),
     snapshot: Optional[UploadFile] = File(None),
     db=Depends(get_db),
 ):
@@ -140,6 +147,7 @@ async def create_alert(
         type=AlertType(alert_type),
         camera_id=camera_id,
         snapshot_path=f"/static/snapshots/{snapshot_filename}" if snapshot_filename else None,
+        employee_id=employee_id,
     )
     db.add(alert)
     await db.commit()
@@ -200,12 +208,57 @@ async def get_stats(db=Depends(get_db)):
         )).scalar() or 0
         by_type[t.value] = count
 
+    # Total de empleados
+    employee_count = (await db.execute(select(func.count(EmployeeORM.id)))).scalar() or 0
+
     return {
         "total": total,
         "pending": pending,
         "resolved": resolved,
         "by_type": by_type,
+        "employee_count": employee_count,
     }
+
+
+# ---------------------------------------------------------------------------
+# ENDPOINTS – Empleados
+# ---------------------------------------------------------------------------
+
+@app.get("/api/employees", response_model=list[EmployeeOut])
+async def list_employees(db=Depends(get_db)):
+    """Lista todos los empleados registrados."""
+    result = await db.execute(select(EmployeeORM).order_by(desc(EmployeeORM.created_at)))
+    return result.scalars().all()
+
+
+@app.post("/api/employees", response_model=EmployeeOut, status_code=201)
+async def create_employee(employee: EmployeeCreate, db=Depends(get_db)):
+    """Registra un nuevo empleado."""
+    # Comprobar que el código no esté duplicado
+    existing = await db.execute(select(EmployeeORM).where(EmployeeORM.code == employee.code))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail=f"Ya existe un empleado con el código '{employee.code}'")
+
+    orm = EmployeeORM(
+        code=employee.code,
+        name=employee.name,
+        role=employee.role,
+    )
+    db.add(orm)
+    await db.commit()
+    await db.refresh(orm)
+    return orm
+
+
+@app.delete("/api/employees/{employee_id}", status_code=204)
+async def delete_employee(employee_id: int, db=Depends(get_db)):
+    """Elimina un empleado por su ID."""
+    from sqlalchemy import delete as sql_delete
+    result = await db.execute(select(EmployeeORM).where(EmployeeORM.id == employee_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Empleado no encontrado")
+    await db.execute(sql_delete(EmployeeORM).where(EmployeeORM.id == employee_id))
+    await db.commit()
 
 
 # ---------------------------------------------------------------------------

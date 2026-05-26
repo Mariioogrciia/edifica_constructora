@@ -1,5 +1,11 @@
 """
 models.py – Modelos ORM (SQLAlchemy) y esquemas Pydantic para Edifica Constructora.
+
+Clases del modelo YOLO entrenado (Construction Site Safety – Roboflow):
+  0: Hardhat          1: Mask             2: NO-Hardhat
+  3: NO-Mask          4: NO-Safety Vest   5: Person
+  6: Safety Cone      7: Safety Vest      8: machinery
+  9: vehicle
 """
 
 from __future__ import annotations
@@ -9,7 +15,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from pydantic import BaseModel, Field
-from sqlalchemy import Boolean, Column, DateTime, Enum, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.sql import func
 
 from database import Base
@@ -20,14 +26,28 @@ from database import Base
 # ---------------------------------------------------------------------------
 
 class AlertType(str, enum.Enum):
-    NO_HARDHAT = "NO_HARDHAT"
-    NO_VEST = "NO_VEST"
-    RESTRICTED_ZONE = "RESTRICTED_ZONE"
+    """Tipos de alerta mapeados a las clases de infracción del modelo YOLO."""
+    NO_HARDHAT = "NO_HARDHAT"           # Clase 2: NO-Hardhat
+    NO_VEST = "NO_VEST"                 # Clase 4: NO-Safety Vest
+    NO_MASK = "NO_MASK"                 # Clase 3: NO-Mask
+    RESTRICTED_ZONE = "RESTRICTED_ZONE" # Regla geométrica (polígono)
 
 
 # ---------------------------------------------------------------------------
 # ORM Models (SQLAlchemy)
 # ---------------------------------------------------------------------------
+
+class EmployeeORM(Base):
+    """Tabla de empleados / trabajadores de la obra."""
+    __tablename__ = "employees"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    code = Column(String, unique=True, nullable=False, index=True)
+    name = Column(String, nullable=False)
+    role = Column(String, nullable=False, default="Operario")
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=func.now())
+
 
 class AlertORM(Base):
     __tablename__ = "alerts"
@@ -38,6 +58,7 @@ class AlertORM(Base):
     camera_id = Column(String, nullable=False, default="CAM-01")
     snapshot_path = Column(String, nullable=True)
     resolved = Column(Boolean, default=False)
+    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
 
 
 class RestrictedZoneORM(Base):
@@ -52,10 +73,31 @@ class RestrictedZoneORM(Base):
 # Pydantic Schemas (request / response)
 # ---------------------------------------------------------------------------
 
+# ── Employees ──
+
+class EmployeeCreate(BaseModel):
+    code: str
+    name: str
+    role: str = "Operario"
+
+class EmployeeOut(BaseModel):
+    id: int
+    code: str
+    name: str
+    role: str
+    active: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ── Alerts ──
+
 class AlertCreate(BaseModel):
     type: AlertType
     camera_id: str = "CAM-01"
     snapshot_filename: Optional[str] = None
+    employee_id: Optional[int] = None
 
 
 class AlertOut(BaseModel):
@@ -65,6 +107,7 @@ class AlertOut(BaseModel):
     camera_id: str
     snapshot_path: Optional[str] = None
     resolved: bool
+    employee_id: Optional[int] = None
 
     model_config = {"from_attributes": True}
 
@@ -72,6 +115,8 @@ class AlertOut(BaseModel):
 class AlertResolve(BaseModel):
     resolved: bool = True
 
+
+# ── Zones ──
 
 class ZonePoint(BaseModel):
     x: float = Field(..., ge=0.0, le=1.0)

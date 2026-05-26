@@ -4,6 +4,7 @@
 const TYPE_LABELS = {
   NO_HARDHAT: '🪖 Sin Casco de Seguridad',
   NO_VEST: '🦺 Sin Chaleco de Seguridad',
+  NO_MASK: '😷 Sin Mascarilla de Protección',
   RESTRICTED_ZONE: '⛔ Acceso a Zona Restringida',
 }
 

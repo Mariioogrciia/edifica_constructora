@@ -4,6 +4,7 @@
 const TYPE_LABELS = {
   NO_HARDHAT: { label: '🪖 Sin Casco', emoji: '🪖' },
   NO_VEST: { label: '🦺 Sin Chaleco', emoji: '🦺' },
+  NO_MASK: { label: '😷 Sin Mascarilla', emoji: '😷' },
   RESTRICTED_ZONE: { label: '⛔ Zona Restringida', emoji: '⛔' },
 }
 

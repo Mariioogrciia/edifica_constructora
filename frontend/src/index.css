@@ -484,6 +484,11 @@ a {
   color: var(--alert-zone);
 }
 
+.alert-card__type--NO_MASK {
+  background: rgba(139, 92, 246, 0.15);
+  color: var(--accent-purple);
+}
+
 .alert-card__meta {
   display: flex;
   align-items: center;
