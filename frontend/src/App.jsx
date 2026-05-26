@@ -219,31 +219,42 @@ export default function App() {
     <div className="app-layout">
       {/* ── Header ── */}
       <header className="app-header">
-        <div className="app-header__brand">
-          <div className="app-header__logo">E</div>
-          <div>
-            <div className="app-header__title">Edifica Constructora</div>
-            <div className="app-header__subtitle">Dashboard de Seguridad Laboral</div>
+        <div className="app-header__left">
+          <div className="app-header__brand">
+            <div className="app-header__logo">E</div>
+            <div className="app-header__info">
+              <h1 className="app-header__title">Edifica Constructora</h1>
+              <p className="app-header__subtitle">Centro de Seguridad Laboral</p>
+            </div>
           </div>
         </div>
-        <div className="app-header__nav" style={{ display: 'flex', flex: 1, justifyContent: 'center' }}>
-          <div className="tabs" style={{ marginBottom: 0 }}>
-            <button className={`tab ${currentView === 'dashboard' ? 'tab--active' : ''}`} onClick={() => setCurrentView('dashboard')}>
-              📊 Dashboard
-            </button>
-            <button className={`tab ${currentView === 'cameras' ? 'tab--active' : ''}`} onClick={() => setCurrentView('cameras')}>
-              📹 Cámaras
-            </button>
-            <button className={`tab ${currentView === 'employees' ? 'tab--active' : ''}`} onClick={() => setCurrentView('employees')}>
-              👷 Empleados
-            </button>
-          </div>
-        </div>
+
+        <nav className="app-header__nav">
+          <button
+            className={`nav-button ${currentView === 'dashboard' ? 'nav-button--active' : ''}`}
+            onClick={() => setCurrentView('dashboard')}
+          >
+            Dashboard
+          </button>
+          <button
+            className={`nav-button ${currentView === 'cameras' ? 'nav-button--active' : ''}`}
+            onClick={() => setCurrentView('cameras')}
+          >
+            Cámaras
+          </button>
+          <button
+            className={`nav-button ${currentView === 'employees' ? 'nav-button--active' : ''}`}
+            onClick={() => setCurrentView('employees')}
+          >
+            Empleados
+          </button>
+        </nav>
+
         <div className="app-header__status">
-          <span className={`status-badge ${wsConnected ? 'status-badge--online' : 'status-badge--offline'}`}>
-            <span className={`status-dot ${wsConnected ? 'status-dot--online' : 'status-dot--offline'}`} />
-            {wsConnected ? 'En Línea' : 'Sin Conexión'}
-          </span>
+          <div className={`status-indicator ${wsConnected ? 'status-indicator--online' : 'status-indicator--offline'}`}>
+            <span className="status-indicator__dot"></span>
+            <span className="status-indicator__text">{wsConnected ? 'En línea' : 'Sin conexión'}</span>
+          </div>
         </div>
       </header>
 
@@ -252,150 +263,154 @@ export default function App() {
 
         {/* ════════════════════════ DASHBOARD VIEW ════════════════════════ */}
         {currentView === 'dashboard' && (
-          <>
-            {/* Stats */}
-            <section className="stats-grid" id="stats-grid">
-              <StatCard icon="📊" value={stats.total} label="Total Alertas" variant="total" />
-              <StatCard icon="🚨" value={stats.pending} label="Pendientes" variant="pending" />
-              <StatCard icon="✅" value={stats.resolved} label="Resueltas" variant="resolved" />
-              <StatCard icon="👷" value={stats.employee_count || 0} label="Empleados" variant="zones" />
-            </section>
+          <div className="dashboard-view">
+            {/* KPI Row - Primary Metrics */}
+            <div className="kpi-row">
+              <div className="kpi-card">
+                <div className="kpi-card__header">
+                  <span className="kpi-card__label">Sin Casco</span>
+                </div>
+                <div className="kpi-card__value">{stats.by_type?.NO_HARDHAT || 0}</div>
+                <div className="kpi-card__footer">
+                  <span className="kpi-card__trend">-2 vs ayer</span>
+                  <span className="kpi-card__status kpi-card__status--warning">Crítico</span>
+                </div>
+              </div>
 
-            {/* Breakdown por tipo */}
-            {stats.by_type && Object.keys(stats.by_type).length > 0 && (
-              <section className="stats-grid" style={{ marginBottom: 'var(--space-xl)' }}>
-                <StatCard
-                  icon="🪖"
-                  value={stats.by_type.NO_HARDHAT || 0}
-                  label="Sin Casco"
-                  variant="pending"
-                />
-                <StatCard
-                  icon="🦺"
-                  value={stats.by_type.NO_VEST || 0}
-                  label="Sin Chaleco"
-                  variant="pending"
-                />
-                <StatCard
-                  icon="😷"
-                  value={stats.by_type.NO_MASK || 0}
-                  label="Sin Mascarilla"
-                  variant="pending"
-                />
-                <StatCard
-                  icon="⛔"
-                  value={stats.by_type.RESTRICTED_ZONE || 0}
-                  label="Zona Restringida"
-                  variant="pending"
-                />
-              </section>
-            )}
+              <div className="kpi-card">
+                <div className="kpi-card__header">
+                  <span className="kpi-card__label">Sin Chaleco</span>
+                </div>
+                <div className="kpi-card__value">{stats.by_type?.NO_VEST || 0}</div>
+                <div className="kpi-card__footer">
+                  <span className="kpi-card__trend">+1 vs ayer</span>
+                  <span className="kpi-card__status kpi-card__status--warning">Crítico</span>
+                </div>
+              </div>
 
-            {/* Tabs de estado global (opcional) */}
-            <div className="section-header">
-              <h1 className="section-title">
-                🔔 Panel Operativo
-              </h1>
+              <div className="kpi-card">
+                <div className="kpi-card__header">
+                  <span className="kpi-card__label">Zona Restringida</span>
+                </div>
+                <div className="kpi-card__value">{stats.by_type?.RESTRICTED_ZONE || 0}</div>
+                <div className="kpi-card__footer">
+                  <span className="kpi-card__trend">Sin cambios</span>
+                  <span className="kpi-card__status kpi-card__status--critical">Crítico</span>
+                </div>
+              </div>
+
+              <div className="kpi-card">
+                <div className="kpi-card__header">
+                  <span className="kpi-card__label">Alertas Activas</span>
+                </div>
+                <div className="kpi-card__value">{stats.pending || 0}</div>
+                <div className="kpi-card__footer">
+                  <span className="kpi-card__trend">En espera</span>
+                  <span className="kpi-card__status kpi-card__status--pending">Pendiente</span>
+                </div>
+              </div>
             </div>
 
-            {/* Bento Grid */}
-            <div className="bento-grid">
-              
-              {/* Columna Izquierda: Alertas */}
-              <div className="alerts-panel">
-                <div className="alerts-panel__header">
-                  <span className="alerts-panel__title">Alertas Recientes</span>
-                  <div className="tabs" style={{ marginBottom: 0 }}>
-                    <button className={`tab ${tab === 'pending' ? 'tab--active' : ''}`} onClick={() => setTab('pending')} style={{ padding: '4px 10px', fontSize: '0.75rem' }}>Pendientes</button>
-                    <button className={`tab ${tab === 'all' ? 'tab--active' : ''}`} onClick={() => setTab('all')} style={{ padding: '4px 10px', fontSize: '0.75rem' }}>Todas</button>
+            {/* Bento Grid Section */}
+            <div className="dashboard-grid">
+              {/* Panel Grande: Alertas Recientes */}
+              <div className="dashboard-panel dashboard-panel--large" style={{ gridColumn: 'span 2', gridRow: 'span 2' }}>
+                <div className="panel-header">
+                  <h2 className="panel-title">Alertas Recientes</h2>
+                  <div className="panel-controls">
+                    <button
+                      className={`filter-btn ${tab === 'pending' ? 'filter-btn--active' : ''}`}
+                      onClick={() => setTab('pending')}
+                    >
+                      Pendientes
+                    </button>
+                    <button
+                      className={`filter-btn ${tab === 'all' ? 'filter-btn--active' : ''}`}
+                      onClick={() => setTab('all')}
+                    >
+                      Todas
+                    </button>
                   </div>
                 </div>
-                <div className="alerts-panel__body">
+                <div className="panel-body">
                   {alerts.length === 0 ? (
                     <div className="empty-state">
-                      <div className="empty-state__icon">🛡️</div>
-                      <div className="empty-state__text">No hay alertas. El sistema está monitoreando.</div>
+                      <div className="empty-state__icon">✓</div>
+                      <div className="empty-state__text">Sistema limpio. Sin alertas activas.</div>
                     </div>
                   ) : (
-                    alerts.slice(0, 10).map((alert) => (
+                    alerts.slice(0, 8).map((alert) => (
                       <AlertCard key={alert.id} alert={alert} isNew={newAlertIds.has(alert.id)} onResolve={resolveAlert} onView={setSelectedAlert} />
                     ))
                   )}
                 </div>
               </div>
 
-              {/* Columna Central: Zonas (Mapa) */}
-              <div className="zones-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                <div className="section-header" style={{ marginBottom: 'var(--space-sm)' }}>
-                  <span className="section-title">🗺️ Mapa de Zonas Restringidas</span>
+              {/* Panel: Zonas Restringidas */}
+              <div className="dashboard-panel">
+                <div className="panel-header">
+                  <h2 className="panel-title">Zonas Activas</h2>
                 </div>
-                <div style={{ flex: 1, background: 'rgba(15, 22, 36, 0.5)', borderRadius: 'var(--radius-md)', border: '1px solid var(--bg-glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '400px', position: 'relative' }}>
+                <div className="panel-body" style={{ padding: 'var(--space-lg)' }}>
                   {zones.length === 0 ? (
-                     <div className="empty-state">
-                       <div className="empty-state__icon">📐</div>
-                       <div className="empty-state__text">No hay zonas configuradas.</div>
-                     </div>
+                    <div className="empty-state" style={{ minHeight: '180px' }}>
+                      <div className="empty-state__icon">◻</div>
+                      <div className="empty-state__text">No hay zonas configuradas</div>
+                    </div>
                   ) : (
-                     <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-                       <div style={{ fontSize: '2rem', marginBottom: '8px', opacity: 0.5 }}>🏗️</div>
-                       <div style={{ fontSize: '0.85rem' }}>{zones.length} Zonas Activas</div>
-                       <div style={{ fontSize: '0.7rem', marginTop: '4px', opacity: 0.6 }}>(Integración de plano en progreso)</div>
-                     </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+                      <div className="zone-stat">
+                        <span className="zone-stat__label">Total Zonas</span>
+                        <span className="zone-stat__value">{zones.length}</span>
+                      </div>
+                      <div className="zone-stat">
+                        <span className="zone-stat__label">Activas</span>
+                        <span className="zone-stat__value">{zones.length}</span>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
 
-              {/* Columna Derecha: Cámaras & Timeline */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
-                {/* Cámaras Activas mini */}
-                <div className="alerts-panel" style={{ height: 'auto', maxHeight: '300px' }}>
-                  <div className="alerts-panel__header">
-                    <span className="alerts-panel__title">Cámaras Activas</span>
-                  </div>
-                  <div className="alerts-panel__body" style={{ padding: 'var(--space-md)' }}>
-                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-sm)' }}>
-                        {[
-                          { id: 'CAM-01', status: 'online' },
-                          { id: 'CAM-02', status: 'online' },
-                          { id: 'CAM-03', status: 'online' },
-                          { id: 'CAM-04', status: 'offline' }
-                        ].map(c => (
-                          <div key={c.id} style={{ background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--bg-glass-border)', overflow: 'hidden' }}>
-                             <div style={{ height: '60px', background: c.status === 'online' ? 'rgba(5, 150, 105, 0.05)' : 'rgba(220, 38, 38, 0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <span style={{ fontSize: '1.2rem', opacity: 0.5 }}>{c.status === 'online' ? '📹' : '🚫'}</span>
-                             </div>
-                             <div style={{ padding: '4px 6px', fontSize: '0.65rem', textAlign: 'center', background: 'var(--bg-card)', borderTop: '1px solid var(--bg-glass-border)' }}>
-                                {c.id} • <span style={{ color: c.status === 'online' ? 'var(--accent-emerald)' : 'var(--accent-red)' }}>{c.status}</span>
-                             </div>
-                          </div>
-                        ))}
-                     </div>
+              {/* Panel: Empleados */}
+              <div className="dashboard-panel">
+                <div className="panel-header">
+                  <h2 className="panel-title">Plantilla</h2>
+                </div>
+                <div className="panel-body" style={{ padding: 'var(--space-lg)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+                    <div className="zone-stat">
+                      <span className="zone-stat__label">Trabajadores</span>
+                      <span className="zone-stat__value">{stats.employee_count || 0}</span>
+                    </div>
+                    <div className="zone-stat">
+                      <span className="zone-stat__label">En Obra</span>
+                      <span className="zone-stat__value">-</span>
+                    </div>
                   </div>
                 </div>
+              </div>
 
-                {/* Timeline */}
-                <div className="alerts-panel" style={{ flex: 1, minHeight: '250px' }}>
-                  <div className="alerts-panel__header">
-                    <span className="alerts-panel__title">Timeline de incidentes</span>
-                  </div>
-                  <div className="alerts-panel__body" style={{ gap: 'var(--space-md)' }}>
-                    {alerts.slice(0, 5).map(a => (
-                      <div key={`tl-${a.id}`} style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center', fontSize: '0.8rem' }}>
-                         <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: a.type === 'NO_HARDHAT' ? 'var(--alert-hardhat)' : a.type === 'NO_VEST' ? 'var(--alert-vest)' : 'var(--alert-zone)' }}></div>
-                         <div style={{ color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                           {new Date(a.timestamp).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
-                         </div>
-                         <div style={{ flex: 1, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                           {a.type}
-                         </div>
-                         <div style={{ color: 'var(--text-secondary)', fontSize: '0.7rem' }}>{a.camera_id}</div>
-                      </div>
-                    ))}
+              {/* Panel: Generales */}
+              <div className="dashboard-panel">
+                <div className="panel-header">
+                  <h2 className="panel-title">Estadísticas</h2>
+                </div>
+                <div className="panel-body" style={{ padding: 'var(--space-lg)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+                    <div className="zone-stat">
+                      <span className="zone-stat__label">Total Alertas</span>
+                      <span className="zone-stat__value">{stats.total || 0}</span>
+                    </div>
+                    <div className="zone-stat">
+                      <span className="zone-stat__label">Resueltas</span>
+                      <span className="zone-stat__value">{stats.resolved || 0}</span>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </>
+          </div>
         )}
 
         {/* ════════════════════════ CAMERAS VIEW ════════════════════════ */}
