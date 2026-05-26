@@ -9,6 +9,7 @@ import StatCard from './components/StatCard.jsx'
 import AlertCard from './components/AlertCard.jsx'
 import AlertModal from './components/AlertModal.jsx'
 import ToastContainer from './components/Toast.jsx'
+import CameraControlCenter from './components/CameraControlCenter.jsx'
 
 const API_BASE = '/api'
 const WS_URL = `ws://${window.location.hostname}:8000/api/alerts/ws`
@@ -290,86 +291,108 @@ export default function App() {
               </section>
             )}
 
-            {/* Tabs */}
+            {/* Tabs de estado global (opcional) */}
             <div className="section-header">
               <h1 className="section-title">
-                🔔 Alertas de Seguridad
-                {stats.pending > 0 && <span className="section-title__count">{stats.pending}</span>}
+                🔔 Panel Operativo
               </h1>
-              <div className="tabs" id="alert-tabs">
-                <button className={`tab ${tab === 'pending' ? 'tab--active' : ''}`} onClick={() => setTab('pending')}>
-                  Pendientes
-                </button>
-                <button className={`tab ${tab === 'resolved' ? 'tab--active' : ''}`} onClick={() => setTab('resolved')}>
-                  Resueltas
-                </button>
-                <button className={`tab ${tab === 'all' ? 'tab--active' : ''}`} onClick={() => setTab('all')}>
-                  Todas
-                </button>
-              </div>
             </div>
 
-            {/* Alerts List */}
-            <div className="alerts-container" id="alerts-list">
+            {/* Bento Grid */}
+            <div className="bento-grid">
+              
+              {/* Columna Izquierda: Alertas */}
               <div className="alerts-panel">
                 <div className="alerts-panel__header">
-                  <span className="alerts-panel__title">
-                    {tab === 'pending' && `🔴 Pendientes (${pendingAlerts.length})`}
-                    {tab === 'resolved' && `🟢 Resueltas (${resolvedAlerts.length})`}
-                    {tab === 'all' && `📋 Todas (${alerts.length})`}
-                  </span>
+                  <span className="alerts-panel__title">Alertas Recientes</span>
+                  <div className="tabs" style={{ marginBottom: 0 }}>
+                    <button className={`tab ${tab === 'pending' ? 'tab--active' : ''}`} onClick={() => setTab('pending')} style={{ padding: '4px 10px', fontSize: '0.75rem' }}>Pendientes</button>
+                    <button className={`tab ${tab === 'all' ? 'tab--active' : ''}`} onClick={() => setTab('all')} style={{ padding: '4px 10px', fontSize: '0.75rem' }}>Todas</button>
+                  </div>
                 </div>
                 <div className="alerts-panel__body">
                   {alerts.length === 0 ? (
                     <div className="empty-state">
                       <div className="empty-state__icon">🛡️</div>
-                      <div className="empty-state__text">
-                        No hay alertas {tab === 'pending' ? 'pendientes' : tab === 'resolved' ? 'resueltas' : ''} por el momento. El sistema está monitoreando.
-                      </div>
+                      <div className="empty-state__text">No hay alertas. El sistema está monitoreando.</div>
                     </div>
                   ) : (
-                    alerts.map((alert) => (
-                      <AlertCard
-                        key={alert.id}
-                        alert={alert}
-                        isNew={newAlertIds.has(alert.id)}
-                        onResolve={resolveAlert}
-                        onView={setSelectedAlert}
-                      />
+                    alerts.slice(0, 10).map((alert) => (
+                      <AlertCard key={alert.id} alert={alert} isNew={newAlertIds.has(alert.id)} onResolve={resolveAlert} onView={setSelectedAlert} />
                     ))
                   )}
                 </div>
               </div>
 
-              {/* Zones Panel */}
-              <div className="zones-panel">
-                <div className="section-header" style={{ marginBottom: 'var(--space-md)' }}>
-                  <span className="section-title">🗺️ Zonas Restringidas</span>
+              {/* Columna Central: Zonas (Mapa) */}
+              <div className="zones-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                <div className="section-header" style={{ marginBottom: 'var(--space-sm)' }}>
+                  <span className="section-title">🗺️ Mapa de Zonas Restringidas</span>
                 </div>
-                {zones.length === 0 ? (
-                  <div className="empty-state">
-                    <div className="empty-state__icon">📐</div>
-                    <div className="empty-state__text">
-                      No hay zonas restringidas configuradas. Usa la API POST /api/zones para añadir polígonos.
-                    </div>
+                <div style={{ flex: 1, background: 'rgba(15, 22, 36, 0.5)', borderRadius: 'var(--radius-md)', border: '1px solid var(--bg-glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '400px', position: 'relative' }}>
+                  {zones.length === 0 ? (
+                     <div className="empty-state">
+                       <div className="empty-state__icon">📐</div>
+                       <div className="empty-state__text">No hay zonas configuradas.</div>
+                     </div>
+                  ) : (
+                     <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+                       <div style={{ fontSize: '2rem', marginBottom: '8px', opacity: 0.5 }}>🏗️</div>
+                       <div style={{ fontSize: '0.85rem' }}>{zones.length} Zonas Activas</div>
+                       <div style={{ fontSize: '0.7rem', marginTop: '4px', opacity: 0.6 }}>(Integración de plano en progreso)</div>
+                     </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Columna Derecha: Cámaras & Timeline */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
+                {/* Cámaras Activas mini */}
+                <div className="alerts-panel" style={{ height: 'auto', maxHeight: '300px' }}>
+                  <div className="alerts-panel__header">
+                    <span className="alerts-panel__title">Cámaras Activas</span>
                   </div>
-                ) : (
-                  <div className="zone-list">
-                    {zones.map((zone) => (
-                      <div className="zone-item" key={zone.id} id={`zone-${zone.id}`}>
-                        <div className="zone-item__info">
-                          <div className="zone-item__icon">🔷</div>
-                          <div>
-                            <div className="zone-item__name">{zone.name}</div>
-                            <div className="zone-item__points">
-                              {zone.polygon_points.length} puntos definidos
-                            </div>
+                  <div className="alerts-panel__body" style={{ padding: 'var(--space-md)' }}>
+                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-sm)' }}>
+                        {[
+                          { id: 'CAM-01', status: 'online' },
+                          { id: 'CAM-02', status: 'online' },
+                          { id: 'CAM-03', status: 'online' },
+                          { id: 'CAM-04', status: 'offline' }
+                        ].map(c => (
+                          <div key={c.id} style={{ background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--bg-glass-border)', overflow: 'hidden' }}>
+                             <div style={{ height: '60px', background: c.status === 'online' ? 'rgba(5, 150, 105, 0.05)' : 'rgba(220, 38, 38, 0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <span style={{ fontSize: '1.2rem', opacity: 0.5 }}>{c.status === 'online' ? '📹' : '🚫'}</span>
+                             </div>
+                             <div style={{ padding: '4px 6px', fontSize: '0.65rem', textAlign: 'center', background: 'var(--bg-card)', borderTop: '1px solid var(--bg-glass-border)' }}>
+                                {c.id} • <span style={{ color: c.status === 'online' ? 'var(--accent-emerald)' : 'var(--accent-red)' }}>{c.status}</span>
+                             </div>
                           </div>
-                        </div>
+                        ))}
+                     </div>
+                  </div>
+                </div>
+
+                {/* Timeline */}
+                <div className="alerts-panel" style={{ flex: 1, minHeight: '250px' }}>
+                  <div className="alerts-panel__header">
+                    <span className="alerts-panel__title">Timeline de incidentes</span>
+                  </div>
+                  <div className="alerts-panel__body" style={{ gap: 'var(--space-md)' }}>
+                    {alerts.slice(0, 5).map(a => (
+                      <div key={`tl-${a.id}`} style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center', fontSize: '0.8rem' }}>
+                         <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: a.type === 'NO_HARDHAT' ? 'var(--alert-hardhat)' : a.type === 'NO_VEST' ? 'var(--alert-vest)' : 'var(--alert-zone)' }}></div>
+                         <div style={{ color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                           {new Date(a.timestamp).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                         </div>
+                         <div style={{ flex: 1, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                           {a.type}
+                         </div>
+                         <div style={{ color: 'var(--text-secondary)', fontSize: '0.7rem' }}>{a.camera_id}</div>
                       </div>
                     ))}
                   </div>
-                )}
+                </div>
               </div>
             </div>
           </>
@@ -377,47 +400,7 @@ export default function App() {
 
         {/* ════════════════════════ CAMERAS VIEW ════════════════════════ */}
         {currentView === 'cameras' && (
-          <section className="cameras-grid">
-            <div className="section-header">
-              <h1 className="section-title">📹 Centro de Control de Cámaras</h1>
-            </div>
-            <div className="cameras-container" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 'var(--space-lg)' }}>
-              {[
-                { id: 'CAM-01', name: 'Entrada Principal', status: 'online' },
-                { id: 'CAM-02', name: 'Zona de Carga', status: 'online' },
-                { id: 'CAM-03', name: 'Planta Alta', status: 'online' },
-                { id: 'CAM-04', name: 'Sótano', status: 'offline' }
-              ].map(cam => (
-                <div key={cam.id} className="stat-card" style={{ padding: 0 }}>
-                  <div style={{ padding: 'var(--space-md)', borderBottom: '1px solid var(--bg-glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ fontWeight: 600 }}>{cam.name} <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>({cam.id})</span></div>
-                    <span className={`status-badge ${cam.status === 'online' ? 'status-badge--online' : 'status-badge--offline'}`}>
-                      <span className={`status-dot ${cam.status === 'online' ? 'status-dot--online' : 'status-dot--offline'}`} />
-                      {cam.status === 'online' ? 'Grabando' : 'Sin Señal'}
-                    </span>
-                  </div>
-                  <div style={{ height: '280px', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-                    {cam.status === 'online' ? (
-                      <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-                        <div style={{ fontSize: '2rem', marginBottom: '8px', opacity: 0.5 }}>🎥</div>
-                        <div style={{ fontSize: '0.85rem' }}>Stream Local Activo</div>
-                        <div style={{ fontSize: '0.7rem', marginTop: '4px', opacity: 0.6 }}>(Conexión Edge-First offline)</div>
-                      </div>
-                    ) : (
-                      <div style={{ textAlign: 'center', color: 'var(--accent-red)' }}>
-                        <div style={{ fontSize: '2rem', marginBottom: '8px', opacity: 0.8 }}>🚫</div>
-                        <div style={{ fontSize: '0.85rem' }}>Conexión Perdida</div>
-                      </div>
-                    )}
-                    {/* Overlay timestamp */}
-                    <div style={{ position: 'absolute', bottom: '8px', right: '12px', fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace' }}>
-                       {new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second:'2-digit' })}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
+          <CameraControlCenter />
         )}
 
         {/* ════════════════════════ EMPLOYEES VIEW ════════════════════════ */}

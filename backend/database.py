@@ -9,7 +9,7 @@ from sqlalchemy.orm import DeclarativeBase
 import os
 
 DATABASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATABASE_URL = f"sqlite+aiosqlite:///{os.path.join(DATABASE_DIR, 'edifica.db')}"
+DATABASE_URL = f"sqlite+aiosqlite:///{os.path.join(DATABASE_DIR, 'edifica_v2.db')}"
 
 engine = create_async_engine(DATABASE_URL, echo=False)
 

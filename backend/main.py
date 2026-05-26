@@ -121,20 +121,88 @@ app.add_middleware(
 # Servir imágenes de snapshots
 app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")), name="static")
 
+# Servir videos locales para visualización en frontend
+VIDEOS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "videos")
+if os.path.exists(VIDEOS_DIR):
+    app.mount("/videos", StaticFiles(directory=VIDEOS_DIR), name="videos")
+
 
 # ---------------------------------------------------------------------------
-# ENDPOINTS – Alertas
+# ENDPOINTS – Alertas y Análisis
 # ---------------------------------------------------------------------------
+
+active_detectors = {}
+
+@app.post("/api/analyze/start")
+async def start_analysis(camera_id: str = Query(...), video_url: str = Query(None)):
+    """Inicia el detector bajo demanda para una cámara específica."""
+    import subprocess
+    import sys
+    
+    # Detener el detector previo si ya estaba corriendo para esta cámara
+    if camera_id in active_detectors:
+        active_detectors[camera_id].terminate()
+    
+    detector_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "detector", "main.py")
+    
+    source = "0"
+    if video_url and "videos/" in video_url:
+        filename = video_url.split("videos/")[-1]
+        source = os.path.join(VIDEOS_DIR, filename)
+        
+    print(f"[INFO] Iniciando análisis automático para {camera_id} en {source}...")
+    
+    proc = subprocess.Popen(
+        [sys.executable, detector_path, "--source", source, "--camera-id", camera_id, "--no-display", "--confidence", "0.25"]
+    )
+    active_detectors[camera_id] = proc
+    
+    return {"message": "Análisis iniciado.", "camera_id": camera_id}
+
+
+@app.post("/api/analyze/stop")
+async def stop_analysis(camera_id: str = Query(...)):
+    """Detiene el detector de una cámara específica."""
+    if camera_id in active_detectors:
+        print(f"[INFO] Deteniendo análisis para {camera_id}...")
+        proc = active_detectors.pop(camera_id)
+        proc.terminate()
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        return {"message": "Análisis detenido.", "camera_id": camera_id}
+    return {"message": "No había análisis activo.", "camera_id": camera_id}
+
 
 @app.post("/api/alerts", response_model=AlertOut, status_code=201)
 async def create_alert(
     alert_type: str = Query(..., alias="type", description="Tipo de alerta: NO_HARDHAT | NO_VEST | NO_MASK | RESTRICTED_ZONE"),
     camera_id: str = Query("CAM-01"),
     employee_id: Optional[int] = Query(None, description="ID del empleado asociado (opcional)"),
+    track_id: Optional[int] = Query(None, description="ID de seguimiento del tracker de YOLO"),
     snapshot: Optional[UploadFile] = File(None),
     db=Depends(get_db),
 ):
-    """Recibe una alerta del Detector, guarda el snapshot y notifica por WS."""
+    """Recibe una alerta del Detector, guarda el snapshot y notifica por WS. Deduplica por track_id."""
+    # Deduplicación: si ya hay una alerta PENDIENTE para esta cámara, tipo y track_id, no creamos una nueva.
+    if track_id is not None and track_id > 0:
+        from sqlalchemy import select
+        existing_stmt = select(AlertORM).where(
+            AlertORM.type == alert_type,
+            AlertORM.camera_id == camera_id,
+            AlertORM.track_id == track_id,
+            AlertORM.resolved == False
+        )
+        existing_result = await db.execute(existing_stmt)
+        existing_alert = existing_result.scalar_one_or_none()
+        
+        if existing_alert:
+            # Ya existe una alerta activa para esta persona. Omitimos crear una nueva.
+            from fastapi.responses import JSONResponse
+            from fastapi.encoders import jsonable_encoder
+            return JSONResponse(status_code=200, content=jsonable_encoder(AlertOut.model_validate(existing_alert)))
+
     snapshot_filename = None
     if snapshot:
         ext = os.path.splitext(snapshot.filename)[1] if snapshot.filename else ".jpg"
@@ -144,10 +212,11 @@ async def create_alert(
             shutil.copyfileobj(snapshot.file, f)
 
     alert = AlertORM(
-        type=AlertType(alert_type),
+        type=alert_type,
         camera_id=camera_id,
         snapshot_path=f"/static/snapshots/{snapshot_filename}" if snapshot_filename else None,
         employee_id=employee_id,
+        track_id=track_id,
     )
     db.add(alert)
     await db.commit()

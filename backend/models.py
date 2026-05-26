@@ -59,6 +59,7 @@ class AlertORM(Base):
     snapshot_path = Column(String, nullable=True)
     resolved = Column(Boolean, default=False)
     employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
+    track_id = Column(Integer, nullable=True)
 
 
 class RestrictedZoneORM(Base):
@@ -103,11 +104,12 @@ class AlertCreate(BaseModel):
 class AlertOut(BaseModel):
     id: int
     timestamp: datetime
-    type: AlertType
+    type: str
     camera_id: str
     snapshot_path: Optional[str] = None
     resolved: bool
     employee_id: Optional[int] = None
+    track_id: Optional[int] = None
 
     model_config = {"from_attributes": True}
 

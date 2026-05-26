@@ -21,7 +21,7 @@ import numpy as np
 # Configuración de umbrales (en segundos)
 # ---------------------------------------------------------------------------
 
-EPI_ALERT_THRESHOLD_SEC = 2.0       # Infracción EPI persistente durante 2 s
+EPI_ALERT_THRESHOLD_SEC = 0.1       # Infracción EPI persistente durante 0.1 s (2-3 frames, para videos de prueba muy cortos)
 ZONE_ALERT_THRESHOLD_SEC = 1.0      # Persona en zona restringida durante 1 s
 COOLDOWN_SEC = 30.0                 # Cooldown entre alertas del mismo tipo
 
@@ -61,14 +61,14 @@ class AlertBuffer:
             return self.zone_threshold
         return self.epi_threshold
 
-    def update(self, alert_type: str, track_id: int = 0) -> bool:
+    def update(self, alert_type: str, track_id: int = 0, custom_now: Optional[float] = None) -> bool:
         """
         Registra que se ha visto una infracción en este frame.
 
         Devuelve True si la infracción ha persistido el tiempo suficiente
         y no está en cooldown → se debe disparar la alerta.
         """
-        now = time.time()
+        now = custom_now if custom_now is not None else time.time()
         key = (alert_type, track_id)
         state = self._states.get(key)
 
@@ -82,7 +82,7 @@ class AlertBuffer:
         elapsed = now - state.first_seen
 
         if elapsed >= threshold:
-            # Comprobar cooldown
+            # Comprobar cooldown (en segundos de tiempo real o de video)
             if state.alerted and (now - state.last_alert_time) < self.cooldown:
                 return False
             state.alerted = True
@@ -130,6 +130,8 @@ def bbox_center_normalized(bbox: tuple, frame_w: int, frame_h: int) -> tuple[flo
 def check_epi_violations(detections: list[dict]) -> list[dict]:
     """
     Analiza las detecciones de un frame y retorna las infracciones EPI.
+    Usa una combinación de detecciones directas de infracciones (ej. NO-Hardhat)
+    y un sistema heurístico negativo (si se detecta una persona pero no se le detecta casco/chaleco).
 
     Cada detección es un dict con al menos: 
         {"class_name": str, "bbox": [x1,y1,x2,y2], "confidence": float}
@@ -137,21 +139,147 @@ def check_epi_violations(detections: list[dict]) -> list[dict]:
     Retorna lista de dicts: {"type": "NO_HARDHAT"|"NO_VEST"|"NO_MASK", "track_id": int, "bbox": [...]}
     """
     violations = []
-
+    
+    # 1. Separar las detecciones por categorías
+    persons = []
+    hardhats = []
+    no_hardhats = []
+    vests = []
+    no_vests = []
+    masks = []
+    no_masks = []
+    
     for det in detections:
-        cls = det.get("class_name", "").upper().replace(" ", "_").replace("-", "_")
-        if cls in ("NO_HARDHAT", "NO_SAFETY_VEST", "NO_VEST", "NO_MASK"):
-            if "HARDHAT" in cls:
-                alert_type = "NO_HARDHAT"
-            elif "MASK" in cls:
-                alert_type = "NO_MASK"
-            else:
-                alert_type = "NO_VEST"
-            violations.append({
-                "type": alert_type,
-                "track_id": det.get("track_id", 0),
-                "bbox": det.get("bbox", []),
-                "confidence": det.get("confidence", 0.0),
-            })
+        cls = det.get("class_name", "")
+        cls_upper = cls.upper().replace(" ", "_").replace("-", "_")
+        
+        if cls_upper == "PERSON":
+            persons.append(det)
+        elif cls_upper == "HARDHAT":
+            hardhats.append(det)
+        elif cls_upper in ("NO_HARDHAT", "NO_HELMET"):
+            no_hardhats.append(det)
+        elif cls_upper in ("SAFETY_VEST", "VEST"):
+            vests.append(det)
+        elif cls_upper in ("NO_SAFETY_VEST", "NO_VEST"):
+            no_vests.append(det)
+        elif cls_upper == "MASK":
+            masks.append(det)
+        elif cls_upper == "NO_MASK":
+            no_masks.append(det)
+
+    # 2. Registrar infracciones directas detectadas por el modelo
+    # Para evitar duplicados en el mismo frame para la misma persona,
+    # llevamos un registro de personas que ya tienen una infracción explícita de cada tipo.
+    explicit_hardhat_infraction_persons = set()
+    explicit_vest_infraction_persons = set()
+    
+    # Infracciones directas de NO-Hardhat
+    for det in no_hardhats:
+        bbox = det.get("bbox", [])
+        track_id = det.get("track_id", 0)
+        violations.append({
+            "type": "NO_HARDHAT",
+            "track_id": track_id,
+            "bbox": bbox,
+            "confidence": det.get("confidence", 0.0),
+        })
+        # Intentar asociar con una persona para marcarla y no generar la heurística negativa
+        if bbox:
+            cx = (bbox[0] + bbox[2]) / 2
+            cy = (bbox[1] + bbox[3]) / 2
+            for p in persons:
+                p_bbox = p.get("bbox", [])
+                if p_bbox and p_bbox[0] <= cx <= p_bbox[2] and p_bbox[1] <= cy <= p_bbox[3]:
+                    explicit_hardhat_infraction_persons.add(p.get("track_id", 0))
+                    break
+
+    # Infracciones directas de NO-Vest / NO-Safety Vest
+    for det in no_vests:
+        bbox = det.get("bbox", [])
+        track_id = det.get("track_id", 0)
+        violations.append({
+            "type": "NO_VEST",
+            "track_id": track_id,
+            "bbox": bbox,
+            "confidence": det.get("confidence", 0.0),
+        })
+        if bbox:
+            cx = (bbox[0] + bbox[2]) / 2
+            cy = (bbox[1] + bbox[3]) / 2
+            for p in persons:
+                p_bbox = p.get("bbox", [])
+                if p_bbox and p_bbox[0] <= cx <= p_bbox[2] and p_bbox[1] <= cy <= p_bbox[3]:
+                    explicit_vest_infraction_persons.add(p.get("track_id", 0))
+                    break
+
+    # Infracciones directas de NO-Mask
+    for det in no_masks:
+        violations.append({
+            "type": "NO_MASK",
+            "track_id": det.get("track_id", 0),
+            "bbox": det.get("bbox", []),
+            "confidence": det.get("confidence", 0.0),
+        })
+
+    # 3. Heurística negativa para personas sin equipo detectado
+    for p in persons:
+        p_bbox = p.get("bbox", [])
+        if not p_bbox or len(p_bbox) != 4:
+            continue
+        
+        p_track_id = p.get("track_id", 0)
+        
+        # --- CASCO / HARDHAT ---
+        # Si esta persona ya tiene una infracción directa de NO-Hardhat, no aplicar heurística
+        if p_track_id not in explicit_hardhat_infraction_persons:
+            # Comprobar si hay algún casco (Hardhat) puesto sobre esta persona
+            has_hardhat = False
+            for h in hardhats:
+                h_bbox = h.get("bbox", [])
+                if h_bbox:
+                    hcx = (h_bbox[0] + h_bbox[2]) / 2
+                    hcy = (h_bbox[1] + h_bbox[3]) / 2
+                    if p_bbox[0] <= hcx <= p_bbox[2] and p_bbox[1] <= hcy <= p_bbox[3]:
+                        has_hardhat = True
+                        break
+            
+            # Si no tiene Hardhat (ni se le detectó casco explícitamente), inferimos NO_HARDHAT
+            if not has_hardhat:
+                # Estimamos la región de la cabeza (top 25% de la caja de la persona)
+                head_y2 = p_bbox[1] + (p_bbox[3] - p_bbox[1]) * 0.25
+                head_bbox = [p_bbox[0], p_bbox[1], p_bbox[2], head_y2]
+                violations.append({
+                    "type": "NO_HARDHAT",
+                    "track_id": p_track_id,
+                    "bbox": head_bbox,
+                    "confidence": p.get("confidence", 0.0),
+                    "inferred": True
+                })
+
+        # --- CHALECO / SAFETY VEST ---
+        if p_track_id not in explicit_vest_infraction_persons:
+            has_vest = False
+            for v in vests:
+                v_bbox = v.get("bbox", [])
+                if v_bbox:
+                    vcx = (v_bbox[0] + v_bbox[2]) / 2
+                    vcy = (v_bbox[1] + v_bbox[3]) / 2
+                    if p_bbox[0] <= vcx <= p_bbox[2] and p_bbox[1] <= vcy <= p_bbox[3]:
+                        has_vest = True
+                        break
+            
+            if not has_vest:
+                # Estimamos la región del pecho/torso (20% a 65% de la caja de la persona)
+                torso_y1 = p_bbox[1] + (p_bbox[3] - p_bbox[1]) * 0.20
+                torso_y2 = p_bbox[1] + (p_bbox[3] - p_bbox[1]) * 0.65
+                torso_bbox = [p_bbox[0], torso_y1, p_bbox[2], torso_y2]
+                violations.append({
+                    "type": "NO_VEST",
+                    "track_id": p_track_id,
+                    "bbox": torso_bbox,
+                    "confidence": p.get("confidence", 0.0),
+                    "inferred": True
+                })
 
     return violations
