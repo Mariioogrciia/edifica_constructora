@@ -20,7 +20,7 @@ const MOCK_CAMERAS = [
     status: 'recording', // 'recording' | 'stream' | 'offline'
     videoUrl: `http://${window.location.hostname}:8000/videos/Realistic_full_body_safety_mon (1).mp4`,
     timestamp: new Date(),
-    lastAlertType: 'NO_HARDHAT',
+    lastAlertType: 'NO_MASK',
     hasPendingAlert: true,
   },
   {
@@ -71,8 +71,8 @@ const MOCK_ACTIVITY = [
   {
     id: 'evt-1',
     camera: 'CAM-01',
-    type: 'NO_HARDHAT',
-    label: 'Sin casco detectado',
+    type: 'NO_MASK',
+    label: 'Sin mascarilla detectada',
     severity: 'critical',
     timestamp: new Date(Date.now() - 120000),
   },
@@ -233,6 +233,7 @@ export default function CameraControlCenter() {
                     <div className="ai-badge">
                       {primaryCamera.lastAlertType === 'NO_HARDHAT' && 'Sin casco'}
                       {primaryCamera.lastAlertType === 'NO_VEST' && 'Sin chaleco'}
+                      {primaryCamera.lastAlertType === 'NO_MASK' && 'Sin mascarilla'}
                       {primaryCamera.lastAlertType === 'RESTRICTED_ZONE' && 'Zona restringida'}
                     </div>
                   </div>
