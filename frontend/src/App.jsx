@@ -10,6 +10,8 @@ import AlertCard from './components/AlertCard.jsx'
 import AlertModal from './components/AlertModal.jsx'
 import ToastContainer from './components/Toast.jsx'
 import CameraControlCenter from './components/CameraControlCenter.jsx'
+import KpiCard from './components/KpiCard.jsx'
+import AlertsPanel from './components/AlertsPanel.jsx'
 
 const API_BASE = '/api'
 const WS_URL = `ws://${window.location.hostname}:8000/api/alerts/ws`
@@ -266,146 +268,48 @@ export default function App() {
           <div className="dashboard-view">
             {/* KPI Row - Primary Metrics */}
             <div className="kpi-row">
-              <div className="kpi-card">
-                <div className="kpi-card__header">
-                  <span className="kpi-card__label">Sin Casco</span>
-                </div>
-                <div className="kpi-card__value">{stats.by_type?.NO_HARDHAT || 0}</div>
-                <div className="kpi-card__footer">
-                  <span className="kpi-card__trend">-2 vs ayer</span>
-                  <span className="kpi-card__status kpi-card__status--warning">Crítico</span>
-                </div>
-              </div>
-
-              <div className="kpi-card">
-                <div className="kpi-card__header">
-                  <span className="kpi-card__label">Sin Chaleco</span>
-                </div>
-                <div className="kpi-card__value">{stats.by_type?.NO_VEST || 0}</div>
-                <div className="kpi-card__footer">
-                  <span className="kpi-card__trend">+1 vs ayer</span>
-                  <span className="kpi-card__status kpi-card__status--warning">Crítico</span>
-                </div>
-              </div>
-
-              <div className="kpi-card">
-                <div className="kpi-card__header">
-                  <span className="kpi-card__label">Zona Restringida</span>
-                </div>
-                <div className="kpi-card__value">{stats.by_type?.RESTRICTED_ZONE || 0}</div>
-                <div className="kpi-card__footer">
-                  <span className="kpi-card__trend">Sin cambios</span>
-                  <span className="kpi-card__status kpi-card__status--critical">Crítico</span>
-                </div>
-              </div>
-
-              <div className="kpi-card">
-                <div className="kpi-card__header">
-                  <span className="kpi-card__label">Alertas Activas</span>
-                </div>
-                <div className="kpi-card__value">{stats.pending || 0}</div>
-                <div className="kpi-card__footer">
-                  <span className="kpi-card__trend">En espera</span>
-                  <span className="kpi-card__status kpi-card__status--pending">Pendiente</span>
-                </div>
-              </div>
+              <KpiCard label="SIN CASCO" value={stats.by_type?.NO_HARDHAT || 0} trend="-2 vs ayer" status="CRÍTICO" />
+              <KpiCard label="SIN CHALECO" value={stats.by_type?.NO_VEST || 0} trend="+1 vs ayer" status="CRÍTICO" />
+              <KpiCard label="ZONA RESTRINGIDA" value={stats.by_type?.RESTRICTED_ZONE || 0} trend="Sin cambios" status="CRÍTICO" />
+              <KpiCard label="ALERTAS ACTIVAS" value={stats.pending || 0} trend="En espera" status="PENDIENTE" />
             </div>
 
             {/* Bento Grid Section */}
             <div className="dashboard-grid">
-              {/* Panel Grande: Alertas Recientes */}
-              <div className="dashboard-panel dashboard-panel--large" style={{ gridColumn: 'span 2', gridRow: 'span 2' }}>
-                <div className="panel-header">
-                  <h2 className="panel-title">Alertas Recientes</h2>
-                  <div className="panel-controls">
-                    <button
-                      className={`filter-btn ${tab === 'pending' ? 'filter-btn--active' : ''}`}
-                      onClick={() => setTab('pending')}
-                    >
-                      Pendientes
-                    </button>
-                    <button
-                      className={`filter-btn ${tab === 'all' ? 'filter-btn--active' : ''}`}
-                      onClick={() => setTab('all')}
-                    >
-                      Todas
-                    </button>
-                  </div>
-                </div>
-                <div className="panel-body">
-                  {alerts.length === 0 ? (
-                    <div className="empty-state">
-                      <div className="empty-state__icon">✓</div>
-                      <div className="empty-state__text">Sistema limpio. Sin alertas activas.</div>
-                    </div>
-                  ) : (
-                    alerts.slice(0, 8).map((alert) => (
-                      <AlertCard key={alert.id} alert={alert} isNew={newAlertIds.has(alert.id)} onResolve={resolveAlert} onView={setSelectedAlert} />
-                    ))
-                  )}
-                </div>
-              </div>
+              <AlertsPanel alerts={alerts} tab={tab} setTab={setTab} onView={setSelectedAlert} onResolve={resolveAlert} />
 
-              {/* Panel: Zonas Restringidas */}
               <div className="dashboard-panel">
-                <div className="panel-header">
-                  <h2 className="panel-title">Zonas Activas</h2>
-                </div>
+                <div className="panel-header"><h2 className="panel-title">Zonas Activas</h2></div>
                 <div className="panel-body" style={{ padding: 'var(--space-lg)' }}>
                   {zones.length === 0 ? (
                     <div className="empty-state" style={{ minHeight: '180px' }}>
-                      <div className="empty-state__icon">◻</div>
                       <div className="empty-state__text">No hay zonas configuradas</div>
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-                      <div className="zone-stat">
-                        <span className="zone-stat__label">Total Zonas</span>
-                        <span className="zone-stat__value">{zones.length}</span>
-                      </div>
-                      <div className="zone-stat">
-                        <span className="zone-stat__label">Activas</span>
-                        <span className="zone-stat__value">{zones.length}</span>
-                      </div>
+                      <div className="zone-stat"><span className="zone-stat__label">Total Zonas</span><span className="zone-stat__value">{zones.length}</span></div>
+                      <div className="zone-stat"><span className="zone-stat__label">Activas</span><span className="zone-stat__value">{zones.length}</span></div>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Panel: Empleados */}
               <div className="dashboard-panel">
-                <div className="panel-header">
-                  <h2 className="panel-title">Plantilla</h2>
-                </div>
+                <div className="panel-header"><h2 className="panel-title">Plantilla</h2></div>
                 <div className="panel-body" style={{ padding: 'var(--space-lg)' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-                    <div className="zone-stat">
-                      <span className="zone-stat__label">Trabajadores</span>
-                      <span className="zone-stat__value">{stats.employee_count || 0}</span>
-                    </div>
-                    <div className="zone-stat">
-                      <span className="zone-stat__label">En Obra</span>
-                      <span className="zone-stat__value">-</span>
-                    </div>
+                    <div className="zone-stat"><span className="zone-stat__label">Trabajadores</span><span className="zone-stat__value">{stats.employee_count || 0}</span></div>
+                    <div className="zone-stat"><span className="zone-stat__label">En Obra</span><span className="zone-stat__value">-</span></div>
                   </div>
                 </div>
               </div>
 
-              {/* Panel: Generales */}
               <div className="dashboard-panel">
-                <div className="panel-header">
-                  <h2 className="panel-title">Estadísticas</h2>
-                </div>
+                <div className="panel-header"><h2 className="panel-title">Estadísticas</h2></div>
                 <div className="panel-body" style={{ padding: 'var(--space-lg)' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-                    <div className="zone-stat">
-                      <span className="zone-stat__label">Total Alertas</span>
-                      <span className="zone-stat__value">{stats.total || 0}</span>
-                    </div>
-                    <div className="zone-stat">
-                      <span className="zone-stat__label">Resueltas</span>
-                      <span className="zone-stat__value">{stats.resolved || 0}</span>
-                    </div>
+                    <div className="zone-stat"><span className="zone-stat__label">Total Alertas</span><span className="zone-stat__value">{stats.total || 0}</span></div>
+                    <div className="zone-stat"><span className="zone-stat__label">Resueltas</span><span className="zone-stat__value">{stats.resolved || 0}</span></div>
                   </div>
                 </div>
               </div>
