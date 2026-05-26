@@ -21,7 +21,7 @@ import shutil
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, cast
 
 from fastapi import (
     Depends,
@@ -219,7 +219,7 @@ async def list_zones(db=Depends(get_db)):
     out = []
     for z in zones:
         points = json.loads(z.polygon_points) if isinstance(z.polygon_points, str) else z.polygon_points
-        out.append(ZoneOut(id=z.id, name=z.name, polygon_points=[ZonePoint(**p) for p in points]))
+        out.append(ZoneOut(id=cast(int, z.id), name=cast(str, z.name), polygon_points=[ZonePoint(**p) for p in points]))
     return out
 
 
@@ -232,7 +232,7 @@ async def create_zone(zone: ZoneCreate, db=Depends(get_db)):
     db.add(orm)
     await db.commit()
     await db.refresh(orm)
-    return ZoneOut(id=orm.id, name=orm.name, polygon_points=zone.polygon_points)
+    return ZoneOut(id=cast(int, orm.id), name=cast(str, orm.name), polygon_points=zone.polygon_points)
 
 
 @app.delete("/api/zones/{zone_id}", status_code=204)
