@@ -17,6 +17,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.sql import func
+import os
 
 from database import Base
 

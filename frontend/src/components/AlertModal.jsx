@@ -2,10 +2,10 @@
  * AlertModal – Modal para ver el detalle de una alerta con su snapshot a tamaño completo.
  */
 const TYPE_LABELS = {
-  NO_HARDHAT: '🪖 Sin Casco de Seguridad',
-  NO_VEST: '🦺 Sin Chaleco de Seguridad',
-  NO_MASK: '😷 Sin Mascarilla de Protección',
-  RESTRICTED_ZONE: '⛔ Acceso a Zona Restringida',
+  NO_HARDHAT: 'Sin Casco de Seguridad',
+  NO_VEST: 'Sin Chaleco de Seguridad',
+  NO_MASK: 'Sin Mascarilla de Protección',
+  RESTRICTED_ZONE: 'Acceso a Zona Restringida',
 }
 
 export default function AlertModal({ alert, onClose, onResolve }) {
@@ -15,10 +15,18 @@ export default function AlertModal({ alert, onClose, onResolve }) {
     <div className="modal-overlay" onClick={onClose} id="alert-modal">
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-content__header">
-          <span className={`alert-card__type alert-card__type--${alert.type}`}>
+          <span style={{
+            display: 'inline-block',
+            padding: '4px 10px',
+            borderRadius: '6px',
+            fontSize: '0.78rem',
+            fontWeight: 700,
+            background: 'var(--color-red-bg)',
+            color: 'var(--color-red)',
+          }}>
             {TYPE_LABELS[alert.type] || alert.type}
           </span>
-          <button className="btn btn--ghost btn--icon" onClick={onClose} title="Cerrar">
+          <button className="btn btn--ghost btn--sm" onClick={onClose} title="Cerrar">
             ✕
           </button>
         </div>
@@ -43,7 +51,7 @@ export default function AlertModal({ alert, onClose, onResolve }) {
           </div>
           <div>
             <strong style={{ color: 'var(--text-primary)' }}>Estado:</strong>{' '}
-            <span style={{ color: alert.resolved ? 'var(--accent-emerald)' : 'var(--accent-red)' }}>
+            <span style={{ color: alert.resolved ? 'var(--color-emerald)' : 'var(--color-red)' }}>
               {alert.resolved ? '✓ Resuelta' : '● Pendiente'}
             </span>
           </div>
@@ -55,14 +63,14 @@ export default function AlertModal({ alert, onClose, onResolve }) {
               className="btn btn--success"
               onClick={() => { onResolve?.(alert.id, true); onClose(); }}
             >
-              ✓ Marcar como Resuelta
+              Marcar como Resuelta
             </button>
           ) : (
             <button
               className="btn btn--danger"
               onClick={() => { onResolve?.(alert.id, false); onClose(); }}
             >
-              ↩ Reabrir Alerta
+              Reabrir Alerta
             </button>
           )}
           <button className="btn btn--ghost" onClick={onClose}>Cerrar</button>

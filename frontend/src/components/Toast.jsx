@@ -37,16 +37,18 @@ function Toast({ alert }) {
 
   if (!visible) return null
 
+  const isGeneric = Boolean(alert.title)
+  const toastClass = alert.kind ? `toast--${alert.kind}` : 'toast--danger'
+  const icon = isGeneric ? (alert.kind === 'success' ? '✓' : alert.kind === 'info' ? 'ℹ️' : '⚠️') : (TYPE_EMOJIS[alert.type] || '⚠️')
+  const title = isGeneric ? alert.title : (TYPE_MSG[alert.type] || 'Nueva alerta de seguridad')
+  const sub = isGeneric ? (alert.sub || '') : `${alert.camera_id} • Ahora mismo`
+
   return (
-    <div className="toast toast--danger">
-      <span className="toast__icon">{TYPE_EMOJIS[alert.type] || '⚠️'}</span>
+    <div className={`toast ${toastClass}`}>
+      <span className="toast__icon">{icon}</span>
       <div>
-        <div className="toast__message">
-          {TYPE_MSG[alert.type] || 'Nueva alerta de seguridad'}
-        </div>
-        <div className="toast__sub">
-          {alert.camera_id} • Ahora mismo
-        </div>
+        <div className="toast__message">{title}</div>
+        {sub && <div className="toast__sub">{sub}</div>}
       </div>
     </div>
   )

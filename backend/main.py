@@ -364,6 +364,21 @@ async def delete_zone(zone_id: int, db=Depends(get_db)):
     await db.commit()
 
 
+@app.post("/api/floorplan")
+async def upload_floorplan(file: UploadFile = File(...)):
+    """Sube un plano de planta personalizado."""
+    static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+    os.makedirs(static_dir, exist_ok=True)
+    
+    file_path = os.path.join(static_dir, "custom_floor_plan.png")
+    
+    content = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(content)
+        
+    return {"message": "Plano subido correctamente", "path": "/static/custom_floor_plan.png"}
+
+
 # ---------------------------------------------------------------------------
 # WebSocket
 # ---------------------------------------------------------------------------
