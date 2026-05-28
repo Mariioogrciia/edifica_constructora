@@ -103,9 +103,20 @@ manager = ConnectionManager()
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     await init_db()
+    await _upgrade_schema()
     await _migrate_zones()
     await _initialize_camera_assignments()
     yield
+
+async def _upgrade_schema():
+    """Run basic schema upgrades for existing SQLite DBs."""
+    from sqlalchemy import text
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("ALTER TABLE alerts ADD COLUMN confidence FLOAT;"))
+    except Exception as e:
+        # Expected if column already exists
+        pass
 
 
 async def _migrate_zones():
@@ -244,6 +255,7 @@ async def create_alert(
     camera_id: str = Query("CAM-01"),
     employee_id: Optional[int] = Query(None, description="ID del empleado asociado (opcional)"),
     track_id: Optional[int] = Query(None, description="ID de seguimiento del tracker de YOLO"),
+    confidence: Optional[float] = Query(None, description="Confianza del modelo (0.0 a 1.0)"),
     snapshot: Optional[UploadFile] = File(None),
     db=Depends(get_db),
 ):
@@ -280,6 +292,7 @@ async def create_alert(
         snapshot_path=f"/static/snapshots/{snapshot_filename}" if snapshot_filename else None,
         employee_id=employee_id,
         track_id=track_id,
+        confidence=confidence,
     )
     db.add(alert)
     await db.commit()

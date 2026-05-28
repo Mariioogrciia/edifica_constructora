@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from pydantic import BaseModel, Field
-from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text, Float
 from sqlalchemy.sql import func
 import os
 
@@ -61,6 +61,7 @@ class AlertORM(Base):
     resolved = Column(Boolean, default=False)
     employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
     track_id = Column(Integer, nullable=True)
+    confidence = Column(Float, nullable=True)
 
 
 class RestrictedZoneORM(Base):
@@ -128,6 +129,7 @@ class AlertCreate(BaseModel):
     camera_id: str = "CAM-01"
     snapshot_filename: Optional[str] = None
     employee_id: Optional[int] = None
+    confidence: Optional[float] = None
 
 
 class AlertOut(BaseModel):
@@ -139,6 +141,7 @@ class AlertOut(BaseModel):
     resolved: bool
     employee_id: Optional[int] = None
     track_id: Optional[int] = None
+    confidence: Optional[float] = None
 
     model_config = {"from_attributes": True}
 

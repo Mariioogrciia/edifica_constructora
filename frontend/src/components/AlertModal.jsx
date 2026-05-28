@@ -55,6 +55,9 @@ export default function AlertModal({ alert, onClose, onResolve }) {
               {alert.resolved ? '✓ Resuelta' : '● Pendiente'}
             </span>
           </div>
+          {alert.confidence != null && (
+            <div><strong style={{ color: 'var(--text-primary)' }}>Confianza del modelo:</strong> {(alert.confidence * 100).toFixed(1)}%</div>
+          )}
         </div>
 
         <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>

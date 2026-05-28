@@ -75,7 +75,7 @@ def fetch_restricted_zones(backend_url: str) -> list[dict]:
         return []
 
 
-def send_alert(backend_url: str, alert_type: str, camera_id: str, frame: np.ndarray, track_id: int = 0):
+def send_alert(backend_url: str, alert_type: str, camera_id: str, frame: np.ndarray, track_id: int = 0, confidence: float = 0.0):
     """Envía una alerta al backend con el snapshot del frame actual."""
     try:
         # Codificar frame como JPEG
@@ -84,6 +84,8 @@ def send_alert(backend_url: str, alert_type: str, camera_id: str, frame: np.ndar
         params = {"type": alert_type, "camera_id": camera_id}
         if track_id > 0:
             params["track_id"] = track_id
+        if confidence > 0:
+            params["confidence"] = round(confidence, 3)
             
         resp = requests.post(f"{backend_url}/api/alerts", params=params, files=files, timeout=10)
         if resp.status_code == 201:
@@ -225,7 +227,7 @@ def main():
                     if x2_pad > x1_pad and y2_pad > y1_pad:
                         crop_frame = frame[y1_pad:y2_pad, x1_pad:x2_pad]
                 
-                send_alert(args.backend, v["type"], args.camera_id, crop_frame, person_id)
+                send_alert(args.backend, v["type"], args.camera_id, crop_frame, person_id, float(v.get("confidence", 0.0)))
 
         # --- Regla 2: Zonas restringidas ---
         for person in person_boxes:
@@ -253,7 +255,7 @@ def main():
                             if x2_pad > x1_pad and y2_pad > y1_pad:
                                 crop_frame = frame[y1_pad:y2_pad, x1_pad:x2_pad]
                         
-                        send_alert(args.backend, "RESTRICTED_ZONE", args.camera_id, crop_frame, track_id)
+                        send_alert(args.backend, "RESTRICTED_ZONE", args.camera_id, crop_frame, track_id, float(person.get("confidence", 0.0)))
 
         # --- Visualización ---
         if not args.no_display:

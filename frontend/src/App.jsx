@@ -225,6 +225,7 @@ export default function App() {
   const [incidentCameraFilter, setIncidentCameraFilter] = useState('all')
   const [incidentDateFilter, setIncidentDateFilter] = useState('all')
   const [incidentZoneFilter, setIncidentZoneFilter] = useState('all')
+  const [selectedIncidents, setSelectedIncidents] = useState(new Set())
   const wsRef = useRef(null)
   const reconnectTimer = useRef(null)
   const [empForm, setEmpForm] = useState({ code: '', name: '', role: 'Operario' })
@@ -341,6 +342,21 @@ export default function App() {
     } catch (e) { console.warn('Error updating camera zone:', e) }
   }, [])
   const resolveAlert = useCallback(async (id, resolved) => { try { await fetch(`${API_BASE}/alerts/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resolved }) }); fetchAlerts(); fetchStats() } catch {} }, [fetchAlerts, fetchStats])
+  const resolveSelectedAlerts = useCallback(async () => {
+    try {
+      await Promise.all(Array.from(selectedIncidents).map(id => fetch(`${API_BASE}/alerts/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resolved: true }) })))
+      setSelectedIncidents(new Set())
+      fetchAlerts()
+      fetchStats()
+      pushToast({ title: 'Resueltas', desc: `${selectedIncidents.size} incidencias marcadas como resueltas.`, type: 'success' })
+    } catch {}
+  }, [selectedIncidents, fetchAlerts, fetchStats, pushToast])
+  const toggleIncidentSelection = useCallback((id) => {
+    setSelectedIncidents(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next })
+  }, [])
+  const toggleAllIncidents = useCallback((currentIds) => {
+    setSelectedIncidents(prev => prev.size === currentIds.length && currentIds.length > 0 ? new Set() : new Set(currentIds))
+  }, [])
   const deleteAlert = useCallback(async (id) => { try { await fetch(`${API_BASE}/alerts/${id}`, { method: 'DELETE' }); if (selectedAlert?.id === id) setSelectedAlert(null); fetchAlerts(); fetchStats() } catch {} }, [fetchAlerts, fetchStats, selectedAlert])
   const clearResolvedAlerts = useCallback(async () => { try { await fetch(`${API_BASE}/alerts?resolved=true`, { method: 'DELETE' }); fetchAlerts(); fetchStats() } catch {} }, [fetchAlerts, fetchStats])
 
@@ -757,10 +773,10 @@ export default function App() {
                 <div className="actions-panel">
                   <div className="actions-panel__title">Acciones rápidas</div>
                   <div className="actions-grid">
-                    <button className="action-btn">{I.add} Agregar cámara</button>
-                    <button className="action-btn">{I.download} Exportar reporte</button>
-                    <button className="action-btn">{I.map} Ver mapa de obra</button>
-                    <button className="action-btn">{I.settings} Configurar alertas</button>
+                    <button className="action-btn" onClick={() => pushToast({ title: 'Nueva cámara', desc: 'Funcionalidad de agregar cámaras próximamente.', type: 'info' })}>{I.add} Agregar cámara</button>
+                    <button className="action-btn" onClick={() => setCurrentView('reports')}>{I.download} Exportar reporte</button>
+                    <button className="action-btn" onClick={() => setCurrentView('zones')}>{I.map} Ver mapa de obra</button>
+                    <button className="action-btn" onClick={() => setCurrentView('settings')}>{I.settings} Configurar alertas</button>
                   </div>
                 </div>
               </div>
@@ -847,7 +863,10 @@ export default function App() {
                   </div>
                   <div className="panel panel--ghost" style={{flex:1}}>
                     <div className="panel-header"><h2 className="panel-title">Timeline</h2><button className="panel-action" onClick={() => setCurrentView('incidents')}>Ver todos</button></div>
-                    <div className="panel-body timeline-list">{pendingAlerts.slice(0,5).map(a=>{const ti=TYPE_LABELS[a.type]||{desc:a.type};const dc=a.type==='NO_HARDHAT'?'timeline-dot--hardhat':a.type==='NO_VEST'?'timeline-dot--vest':'timeline-dot--zone';return(<div className="timeline-item" key={`tl-${a.id}`}><span className={`timeline-dot ${dc}`}></span><span className="timeline-time">{timeAgo(a.timestamp, clockNow)}</span><span className="timeline-desc">{ti.desc}</span><span className="timeline-cam">{a.camera_id}</span></div>)})}</div>
+                    <div className="panel-body timeline-list">
+                      {pendingAlerts.slice(0,5).map(a=>{const ti=TYPE_LABELS[a.type]||{desc:a.type};const dc=a.type==='NO_HARDHAT'?'timeline-dot--hardhat':a.type==='NO_VEST'?'timeline-dot--vest':'timeline-dot--zone';return(<div className="timeline-item" key={`tl-${a.id}`}><span className={`timeline-dot ${dc}`}></span><span className="timeline-time">{timeAgo(a.timestamp, clockNow)}</span><span className="timeline-desc">{ti.desc}</span><span className="timeline-cam">{a.camera_id}</span></div>)})}
+                      {pendingAlerts.length === 0 && <div className="empty-state" style={{margin:'auto'}}><div className="empty-state__text">Sin eventos recientes</div></div>}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -864,6 +883,7 @@ export default function App() {
                 </div>
                 <div className="incidents-page-actions">
                   <div className="incidents-search">{I.search}<input value={incidentSearch} onChange={(e)=>setIncidentSearch(e.target.value)} type="text" placeholder="Buscar por cámara, zona o tipo..." /></div>
+                  {selectedIncidents.size > 0 && <button className="btn btn--primary btn--sm" style={{background:'var(--color-success)', color:'#fff', border:'none', padding:'8px 16px', borderRadius:'6px', cursor:'pointer'}} onClick={resolveSelectedAlerts}>Resolver seleccionadas ({selectedIncidents.size})</button>}
                   <button className="btn btn--ghost btn--sm" onClick={clearResolvedAlerts} disabled={kpiResolved === 0}>Eliminar resueltas</button>
                   <button className="top-bar__action">Salir de zona</button>
                 </div>
@@ -911,7 +931,7 @@ export default function App() {
                   <div className="incident-priority-head">Incidencia prioritaria</div>
                   <div className="incident-priority-main">
                     <div className="incident-priority-title">{prioritizedIncident.typeLabel} · {prioritizedIncident.camera_id}</div>
-                    <div className="incident-priority-meta">{prioritizedIncident.zone} · {timeAgo(prioritizedIncident.timestamp, clockNow)} · {formatDateTime(prioritizedIncident.timestamp)}</div>
+                    <div className="incident-priority-meta">{prioritizedIncident.zone} · {timeAgo(prioritizedIncident.timestamp, clockNow)} · {formatDateTime(prioritizedIncident.timestamp)}{prioritizedIncident.confidence != null ? ` · ${(prioritizedIncident.confidence * 100).toFixed(1)}% precisión` : ''}</div>
                   </div>
                   <button className="btn btn--ghost btn--sm" onClick={() => setSelectedAlert(prioritizedIncident)}>Ver detalle</button>
                 </div>
@@ -919,12 +939,16 @@ export default function App() {
 
               <div className="panel incidents-list-panel">
                 <div className="panel-header incidents-list-panel__header">
-                  <h2 className="panel-title">Lista operativa de incidencias</h2>
+                  <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+                    <input type="checkbox" checked={incidentsFiltered.length > 0 && selectedIncidents.size === incidentsFiltered.length} onChange={() => toggleAllIncidents(incidentsFiltered.map(i=>i.id))} style={{cursor:'pointer', transform:'scale(1.2)', accentColor: 'var(--color-accent)'}} title="Seleccionar todas" />
+                    <h2 className="panel-title">Lista operativa de incidencias</h2>
+                  </div>
                   <div className="incidents-list-count">{incidentsFiltered.length} resultados</div>
                 </div>
                 <div className="panel-body incidents-list-body">
                   {incidentsFiltered.map((a, idx) => (
                     <div className={`incident-row ${a.severityKey === 'alta' ? 'incident-row--high' : ''} ${idx === 0 ? 'incident-row--first' : ''}`} key={a.id} onClick={()=>setSelectedAlert(a)}>
+                      <div style={{padding:'0 10px'}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIncidents.has(a.id)} onChange={() => toggleIncidentSelection(a.id)} style={{cursor:'pointer', transform:'scale(1.2)', accentColor: 'var(--color-accent)'}} /></div>
                       <div className="incident-thumb">{a.snapshot_path ? <img src={a.snapshot_path} alt="" loading="lazy"/> : <div className="incident-thumb-empty">{I.camera}</div>}</div>
                       <div className="incident-main">
                         <div className="incident-main-top">
@@ -932,7 +956,7 @@ export default function App() {
                           <span className={`incident-status-chip ${a.resolved ? 'incident-status-chip--resolved' : 'incident-status-chip--pending'}`}>{a.statusLabel}</span>
                         </div>
                         <div className="incident-cam-line"><strong>{a.camera_id}</strong> · {a.zone}</div>
-                        <div className="incident-time-line">{timeAgo(a.timestamp, clockNow)} · {formatDateTime(a.timestamp)}</div>
+                        <div className="incident-time-line">{timeAgo(a.timestamp, clockNow)} · {formatDateTime(a.timestamp)}{a.confidence != null ? ` · ${(a.confidence * 100).toFixed(1)}% precisión` : ''}</div>
                       </div>
                       <div className="incident-severity-col">
                         <span className={`incident-severity-badge incident-severity-badge--${a.severityKey}`}>{a.severity}</span>
@@ -968,7 +992,10 @@ export default function App() {
           {/* ════════ ZONES (from dashboard link) ════════ */}
           {currentView === 'zones' && (
             <div className="panel panel--flex zones-panel">
-              <div className="panel-header"><h2 className="panel-title">Zonas de obra</h2></div>
+              <div className="panel-header">
+                <h2 className="panel-title">Zonas de obra</h2>
+                <button className="panel-action" onClick={() => setCurrentView('dashboard')}>← Volver</button>
+              </div>
               <div className="panel-body" style={{ flex: 1, display: 'flex', padding: 0, minHeight: 0 }}>
                 <ZonesMap mode="edit" zones={zones} cameras={cameras} fetchZones={fetchZones} onCamerasChange={handleCamerasChange} onNotify={pushToast} />
               </div>
