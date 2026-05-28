@@ -10,15 +10,12 @@
 
 import { useState, useEffect } from 'react'
 
-const API_BASE = '/api'
-
 // ─── Camera Data ───────────────────────────────────────────
 const MOCK_CAMERAS = [
   {
     id: 'CAM-01',
     name: 'Entrada Principal',
     status: 'recording', // 'recording' | 'stream' | 'offline'
-    videoUrl: `http://${window.location.hostname}:8000/videos/Realistic_full_body_safety_mon (1).mp4`,
     timestamp: new Date(),
     lastAlertType: 'NO_MASK',
     hasPendingAlert: true,
@@ -27,7 +24,6 @@ const MOCK_CAMERAS = [
     id: 'CAM-02',
     name: 'Zona de Carga',
     status: 'recording',
-    videoUrl: `http://${window.location.hostname}:8000/videos/mp_.mp4`,
     timestamp: new Date(),
     lastAlertType: null,
     hasPendingAlert: false,
@@ -201,29 +197,10 @@ export default function CameraControlCenter() {
                     <div className="video-placeholder__icon">DESCONECTADO</div>
                     <div className="video-placeholder__text">Cámara sin conexión</div>
                   </div>
-                ) : primaryCamera.videoUrl ? (
-                  <video
-                    src={primaryCamera.videoUrl}
-                    controls
-                    loop
-                    muted
-                    playsInline
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    onPlay={async (e) => {
-                      if (e.target.dataset.started === 'true') return
-                      e.target.dataset.started = 'true'
-                      try {
-                        const url = `${API_BASE}/analyze/start?camera_id=${primaryCamera.id}&video_url=${encodeURIComponent(primaryCamera.videoUrl || '')}`
-                        await fetch(url, { method: 'POST' })
-                      } catch (err) {
-                        console.error('Error al iniciar análisis:', err)
-                      }
-                    }}
-                  />
                 ) : (
                   <div className="video-placeholder">
-                    <div className="video-placeholder__icon">CONECTADO</div>
-                    <div className="video-placeholder__text">Stream en vivo</div>
+                    <div className="video-placeholder__icon">CÁMARA</div>
+                    <div className="video-placeholder__text">Vista en vivo desactivada</div>
                   </div>
                 )}
 
@@ -297,16 +274,8 @@ export default function CameraControlCenter() {
                 <div className="camera-card__video--secondary">
                   {cam.status === 'offline' ? (
                     <div className="video-placeholder--secondary">DESCONECTADO</div>
-                  ) : cam.videoUrl ? (
-                    <video
-                      src={cam.videoUrl}
-                      loop
-                      muted
-                      playsInline
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
                   ) : (
-                    <div className="video-placeholder--secondary">EN VIVO</div>
+                    <div className="video-placeholder--secondary">CÁMARA ACTIVA</div>
                   )}
 
                   {/* Status Chip */}

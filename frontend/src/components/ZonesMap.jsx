@@ -22,12 +22,74 @@ const INITIAL_CAMERAS = [
   { id: 'CAM-05', name: 'Acopio Materiales', x: 0.85, y: 0.15 },
 ];
 
-export default function ZonesMap({ mode = 'read-only', zones = [], fetchZones = () => {} }) {
+const ZONE_TYPE_STYLE = {
+  Restringida: { stroke: 'var(--color-red)', fill: 'rgba(180, 95, 95, 0.16)' },
+  Central: { stroke: 'var(--color-blue)', fill: 'rgba(194, 165, 108, 0.16)' },
+  Operativa: { stroke: 'var(--color-success)', fill: 'rgba(63, 143, 107, 0.16)' },
+  Perímetro: { stroke: 'var(--color-warning)', fill: 'rgba(184, 138, 59, 0.14)' },
+  Acceso: { stroke: '#7b95cc', fill: 'rgba(123, 149, 204, 0.14)' },
+  Logística: { stroke: '#8f7bc6', fill: 'rgba(143, 123, 198, 0.14)' },
+}
+
+function getZoneStyle(type) {
+  return ZONE_TYPE_STYLE[type] || ZONE_TYPE_STYLE.Restringida
+}
+
+function nextCameraId(existing = []) {
+  const maxNum = existing.reduce((max, cam) => {
+    const match = String(cam.id || '').match(/CAM-(\d+)/)
+    if (!match) return max
+    return Math.max(max, Number(match[1]))
+  }, 0)
+  return `CAM-${String(maxNum + 1).padStart(2, '0')}`
+}
+
+function normalizeZonePoints(points = []) {
+  return (points || []).map(point => {
+    if (Array.isArray(point)) {
+      return { x: Number(point[0]) || 0, y: Number(point[1]) || 0 }
+    }
+    return { x: Number(point?.x) || 0, y: Number(point?.y) || 0 }
+  })
+}
+
+function pointInPolygon(point, polygon = []) {
+  if (!point || !polygon || polygon.length < 3) return false
+  const { x, y } = point
+  let inside = false
+
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const xi = polygon[i].x
+    const yi = polygon[i].y
+    const xj = polygon[j].x
+    const yj = polygon[j].y
+
+    const intersects = ((yi > y) !== (yj > y)) && (
+      x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-12) + xi
+    )
+    if (intersects) inside = !inside
+  }
+
+  return inside
+}
+
+function getZoneAtPoint(point, zones = []) {
+  const matches = zones
+    .map(zone => ({
+      name: zone.name || 'Pendiente',
+      points: normalizeZonePoints(zone.polygon_points || zone.points || []),
+    }))
+    .filter(zone => pointInPolygon(point, zone.points))
+
+  return matches[0]?.name || 'Pendiente'
+}
+
+export default function ZonesMap({ mode = 'read-only', zones = [], cameras = [], fetchZones = () => {}, onCamerasChange, onNotify }) {
   const containerRef = useRef(null);
   const fileInputRef = useRef(null);
   const [bgImage, setBgImage] = useState(floorPlanUrl);
   const [imageSize, setImageSize] = useState({ width: 800, height: 600 });
-  const [cameras, setCameras] = useState(INITIAL_CAMERAS);
+  const [mapCameras, setMapCameras] = useState(cameras.length ? cameras : INITIAL_CAMERAS);
 
   // Tools state: 'pan', 'draw', 'camera'
   const [activeTool, setActiveTool] = useState(mode === 'edit' ? 'pan' : 'none');
@@ -44,6 +106,18 @@ export default function ZonesMap({ mode = 'read-only', zones = [], fetchZones = 
 
   // Camera drag state
   const [draggingCam, setDraggingCam] = useState(null);
+  const [zoneDraft, setZoneDraft] = useState({ open: false, mode: 'create', zoneId: null, points: [], name: '', zoneType: 'Central', cameraId: '' });
+  const [cameraDraft, setCameraDraft] = useState({ open: false, x: 0, y: 0, zoneName: 'Pendiente', camName: '' });
+  const [deleteDraft, setDeleteDraft] = useState({ open: false, kind: '', id: '', label: '' });
+
+  useEffect(() => {
+    setMapCameras(cameras.length ? cameras : INITIAL_CAMERAS)
+  }, [cameras])
+
+  const syncCameras = (updated) => {
+    setMapCameras(updated)
+    onCamerasChange?.(updated)
+  }
 
   const loadBgImage = () => {
     const customUrl = `${API_BASE.replace('/api', '')}/static/custom_floor_plan.png?t=${Date.now()}`;
@@ -163,7 +237,7 @@ export default function ZonesMap({ mode = 'read-only', zones = [], fetchZones = 
       setMousePos(getRelativeCoords(e));
     } else if (draggingCam) {
       const pt = getRelativeCoords(e);
-      setCameras(cameras.map(c => c.id === draggingCam ? { ...c, x: pt.x, y: pt.y } : c));
+      syncCameras(mapCameras.map(c => c.id === draggingCam ? { ...c, x: pt.x, y: pt.y } : c));
     }
   };
 
@@ -176,36 +250,134 @@ export default function ZonesMap({ mode = 'read-only', zones = [], fetchZones = 
     setIsDrawing(false);
     setMousePos(null);
     setCurrentPoints([]);
-    const name = window.prompt("Nombre de la nueva zona restringida:");
-    if (!name || name.trim() === "") return;
+    setZoneDraft({ open: true, mode: 'create', zoneId: null, points, name: '', zoneType: 'Central', cameraId: '' })
+  };
+
+  const openZoneEditor = (zone, e) => {
+    e.stopPropagation()
+    const zoneType = zone.zone_type || zone.type || 'Central'
+    const cameraId = zone.camera_id || zone.camera || ''
+    setZoneDraft({
+      open: true,
+      mode: 'edit',
+      zoneId: zone.id,
+      points: zone.polygon_points || [],
+      name: zone.name || '',
+      zoneType,
+      cameraId,
+    })
+  }
+
+  const saveZoneDraft = async () => {
+    const name = zoneDraft.name.trim()
+    if (!name) {
+      onNotify?.({ kind: 'info', title: 'Nombre requerido', sub: 'Indica un nombre para la zona' })
+      return
+    }
+
     try {
-      const res = await fetch(`${API_BASE}/zones`, {
-        method: 'POST',
+      const isEdit = zoneDraft.mode === 'edit' && zoneDraft.zoneId != null
+      const endpoint = isEdit ? `${API_BASE}/zones/${zoneDraft.zoneId}` : `${API_BASE}/zones`
+      const method = isEdit ? 'PATCH' : 'POST'
+      const payload = {
+        name,
+        zone_type: zoneDraft.zoneType,
+        camera_id: zoneDraft.cameraId.trim() || null,
+      }
+
+      const res = await fetch(endpoint, {
+        method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, polygon_points: points })
+        body: JSON.stringify(isEdit ? payload : { ...payload, polygon_points: zoneDraft.points })
       });
-      if (res.ok) fetchZones();
+      if (res.ok) {
+        fetchZones();
+        onNotify?.({
+          kind: 'success',
+          title: isEdit ? 'Zona actualizada' : 'Zona creada',
+          sub: isEdit ? `${name} actualizada correctamente` : `${name} (${zoneDraft.zoneType}) añadida al plano`,
+        })
+        setZoneDraft({ open: false, mode: 'create', zoneId: null, points: [], name: '', zoneType: 'Central', cameraId: '' })
+      }
     } catch (err) {
       console.error("Error saving zone", err);
     }
   };
 
+  const handleAddCameraOnMap = (e) => {
+    if (mode !== 'edit' || activeTool !== 'camera') return
+    const pt = getRelativeCoords(e)
+    const zoneName = getZoneAtPoint(pt, zones)
+    setCameraDraft({
+      open: true,
+      x: pt.x,
+      y: pt.y,
+      zoneName,
+      camName: `Cámara ${mapCameras.length + 1}`,
+    })
+  }
+
+  const saveCameraDraft = () => {
+    const id = nextCameraId(mapCameras)
+    const detectedZone = getZoneAtPoint({ x: cameraDraft.x, y: cameraDraft.y }, zones)
+    const newCamera = {
+      id,
+      name: cameraDraft.camName.trim() || `Cámara ${mapCameras.length + 1}`,
+      status: 'online',
+      zone: detectedZone || cameraDraft.zoneName.trim() || 'Pendiente',
+      x: cameraDraft.x,
+      y: cameraDraft.y,
+      source: 'rtsp://10.0.1.50/live',
+      videoUrl: null,
+    }
+    syncCameras([...mapCameras, newCamera])
+    onNotify?.({ kind: 'success', title: 'Cámara añadida', sub: `${id} vinculada a ${newCamera.zone}` })
+    setCameraDraft({ open: false, x: 0, y: 0, zoneName: 'Pendiente', camName: '' })
+  }
+
+  const handleDeleteCamera = (cameraId, cameraName, e) => {
+    e.stopPropagation()
+    setDeleteDraft({ open: true, kind: 'camera', id: cameraId, label: cameraName || cameraId })
+  }
+
   const deleteZone = async (id, e) => {
     e.stopPropagation();
-    if (!window.confirm("¿Eliminar esta zona restringida?")) return;
-    try {
-      await fetch(`${API_BASE}/zones/${id}`, { method: 'DELETE' });
-      fetchZones();
-    } catch (err) {
-      console.error("Error deleting zone", err);
-    }
+    const zone = zones.find(item => item.id === id)
+    setDeleteDraft({ open: true, kind: 'zone', id, label: zone?.name || `Zona ${id}` })
   };
+
+  const confirmDeleteDraft = async () => {
+    if (deleteDraft.kind === 'camera') {
+      const updated = mapCameras.filter(camera => camera.id !== deleteDraft.id)
+      syncCameras(updated)
+      onNotify?.({ kind: 'info', title: 'Cámara eliminada', sub: `${deleteDraft.id} fue retirada del plano y del listado` })
+      setDeleteDraft({ open: false, kind: '', id: '', label: '' })
+      return
+    }
+
+    if (deleteDraft.kind === 'zone') {
+      try {
+        await fetch(`${API_BASE}/zones/${deleteDraft.id}`, { method: 'DELETE' });
+        fetchZones();
+        onNotify?.({ kind: 'info', title: 'Zona eliminada', sub: `${deleteDraft.label} fue retirada del plano` })
+      } catch (err) {
+        console.error("Error deleting zone", err);
+      }
+      setDeleteDraft({ open: false, kind: '', id: '', label: '' })
+    }
+  }
+
+  const closeDrafts = () => {
+    setZoneDraft({ open: false, mode: 'create', zoneId: null, points: [], name: '', zoneType: 'Central', cameraId: '' })
+    setCameraDraft({ open: false, x: 0, y: 0, zoneName: 'Pendiente', camName: '' })
+    setDeleteDraft({ open: false, kind: '', id: '', label: '' })
+  }
 
   // Convert relative coordinates back to SVG view space (which is size 0->width, 0->height)
   const toPointsString = (pts) => pts.map(p => `${p.x * imageSize.width},${p.y * imageSize.height}`).join(' ');
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: '400px', background: 'var(--bg-card)', overflow: 'hidden' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: mode === 'edit' ? 0 : '400px', background: 'var(--bg-card)', overflow: 'hidden' }}>
       
       {/* Tools Panel */}
       {mode === 'edit' && (
@@ -249,10 +421,67 @@ export default function ZonesMap({ mode = 'read-only', zones = [], fetchZones = 
         </div>
       )}
 
+      {mode === 'edit' && activeTool === 'pan' && !zoneDraft.open && !cameraDraft.open && !deleteDraft.open && (
+        <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 10, background: 'rgba(11, 17, 32, 0.9)', padding: '8px 16px', borderRadius: '24px', border: '1px solid var(--color-warning)', fontSize: '0.75rem', color: 'var(--text-primary)', boxShadow: 'var(--shadow-glow-subtle)' }}>
+          Haz clic sobre una zona para editar su nombre, tipo o cámara asociada.
+        </div>
+      )}
+
+      {mode === 'edit' && activeTool === 'camera' && (
+        <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 10, background: 'rgba(11, 17, 32, 0.9)', padding: '8px 16px', borderRadius: '24px', border: '1px solid var(--color-emerald)', fontSize: '0.75rem', color: 'var(--text-primary)', boxShadow: 'var(--shadow-glow-subtle)' }}>
+          Doble clic para crear cámara. Arrastra para moverla o usa el botón rojo para eliminarla.
+        </div>
+      )}
+
+      {(zoneDraft.open || cameraDraft.open || deleteDraft.open) && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 25, background: 'rgba(4, 8, 14, 0.58)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          {zoneDraft.open && (
+            <div style={{ width: 'min(92%, 480px)', background: 'rgba(11, 17, 32, 0.98)', border: '1px solid var(--color-border)', borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <strong style={{ color: 'var(--text-primary)' }}>{zoneDraft.mode === 'edit' ? 'Editar zona de obra' : 'Nueva zona de obra'}</strong>
+              <input className="setting-input" placeholder="Nombre de zona" value={zoneDraft.name} onChange={(e) => setZoneDraft(prev => ({ ...prev, name: e.target.value }))} />
+              <select className="setting-select" value={zoneDraft.zoneType} onChange={(e) => setZoneDraft(prev => ({ ...prev, zoneType: e.target.value }))}>
+                <option>Central</option><option>Operativa</option><option>Restringida</option><option>Perímetro</option><option>Acceso</option><option>Logística</option>
+              </select>
+              <input className="setting-input" placeholder="ID cámara asociada (opcional, ej: CAM-01)" value={zoneDraft.cameraId} onChange={(e) => setZoneDraft(prev => ({ ...prev, cameraId: e.target.value }))} />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button className="btn btn--ghost" onClick={closeDrafts}>Cancelar</button>
+                <button className="btn btn--primary" onClick={saveZoneDraft}>{zoneDraft.mode === 'edit' ? 'Guardar cambios' : 'Guardar zona'}</button>
+              </div>
+            </div>
+          )}
+
+          {cameraDraft.open && (
+            <div style={{ width: 'min(92%, 480px)', background: 'rgba(11, 17, 32, 0.98)', border: '1px solid var(--color-border)', borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <strong style={{ color: 'var(--text-primary)' }}>Nueva cámara</strong>
+              <input className="setting-input" placeholder="Nombre de cámara" value={cameraDraft.camName} onChange={(e) => setCameraDraft(prev => ({ ...prev, camName: e.target.value }))} />
+              <input className="setting-input" placeholder="Zona asociada" value={cameraDraft.zoneName} onChange={(e) => setCameraDraft(prev => ({ ...prev, zoneName: e.target.value }))} />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button className="btn btn--ghost" onClick={closeDrafts}>Cancelar</button>
+                <button className="btn btn--primary" onClick={saveCameraDraft}>Guardar cámara</button>
+              </div>
+            </div>
+          )}
+
+          {deleteDraft.open && (
+            <div style={{ width: 'min(92%, 460px)', background: 'rgba(11, 17, 32, 0.98)', border: '1px solid var(--color-border)', borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <strong style={{ color: 'var(--text-primary)' }}>Confirmar eliminación</strong>
+              <span style={{ color: 'var(--text-secondary)', fontSize: '0.86rem' }}>
+                {deleteDraft.kind === 'camera' ? `¿Eliminar cámara ${deleteDraft.id} (${deleteDraft.label})?` : `¿Eliminar zona ${deleteDraft.label}?`}
+              </span>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button className="btn btn--ghost" onClick={closeDrafts}>Cancelar</button>
+                <button className="btn btn--primary" onClick={confirmDeleteDraft}>Eliminar</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Canvas Container */}
       <div 
         ref={containerRef}
         onPointerDown={handlePointerDown}
+        onDoubleClick={handleAddCameraOnMap}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
@@ -288,35 +517,41 @@ export default function ZonesMap({ mode = 'read-only', zones = [], fetchZones = 
 
             {/* Zonas guardadas */}
             {zones.map((z) => {
+              const zoneType = z.zone_type || z.type || 'Restringida'
+              const zoneCamera = z.camera_id || z.camera || null
+              const zoneStyle = getZoneStyle(zoneType)
               const xs = z.polygon_points.map(p => p.x * imageSize.width);
               const ys = z.polygon_points.map(p => p.y * imageSize.height);
               const cx = xs.reduce((a, b) => a + b, 0) / xs.length;
               const cy = ys.reduce((a, b) => a + b, 0) / ys.length;
 
               return (
-                <g key={z.id} style={{ pointerEvents: mode === 'edit' && activeTool === 'pan' ? 'auto' : 'none' }}>
+                <g key={z.id} onClick={(e) => mode === 'edit' && activeTool === 'pan' && openZoneEditor(z, e)} style={{ pointerEvents: mode === 'edit' && activeTool === 'pan' ? 'auto' : 'none', cursor: mode === 'edit' && activeTool === 'pan' ? 'pointer' : 'default' }}>
                   <polygon
                     points={toPointsString(z.polygon_points)}
-                    fill="url(#diagonalHatch)"
-                    stroke="var(--color-red)"
+                    fill={zoneStyle.fill}
+                    stroke={zoneStyle.stroke}
                     strokeWidth={2 / transform.scale}
                     style={{ transition: 'all 0.2s' }}
                   />
                   {z.polygon_points.map((p, i) => (
-                    <circle key={i} cx={p.x * imageSize.width} cy={p.y * imageSize.height} r={4 / transform.scale} fill="var(--color-red)" opacity={mode === 'edit' ? 0.8 : 0} />
+                    <circle key={i} cx={p.x * imageSize.width} cy={p.y * imageSize.height} r={4 / transform.scale} fill={zoneStyle.stroke} opacity={mode === 'edit' ? 0.8 : 0} />
                   ))}
                   
                   {/* Etiqueta de la zona */}
                   <g transform={`translate(${cx}, ${cy})`}>
-                    <rect x={-40/transform.scale} y={-10/transform.scale} width={80/transform.scale} height={20/transform.scale} rx={4/transform.scale} fill="rgba(11, 17, 32, 0.8)" />
-                    <text x="0" y={4/transform.scale} fill="#fff" fontSize={12 / transform.scale} fontWeight="600" textAnchor="middle">
-                      {z.name}
+                    <rect x={-72/transform.scale} y={-18/transform.scale} width={144/transform.scale} height={36/transform.scale} rx={4/transform.scale} fill="rgba(11, 17, 32, 0.82)" />
+                    <text x="0" y={-2/transform.scale} fill="#fff" fontSize={11 / transform.scale} fontWeight="700" textAnchor="middle">
+                      {z.name} · {zoneType}
+                    </text>
+                    <text x="0" y={11/transform.scale} fill="#d5deea" fontSize={9 / transform.scale} fontWeight="500" textAnchor="middle">
+                      {zoneCamera ? `Cam: ${zoneCamera}` : 'Sin cámara asociada'}
                     </text>
                   </g>
 
                   {mode === 'edit' && (
-                    <g onClick={(e) => deleteZone(z.id, e)} style={{ cursor: 'pointer', pointerEvents: 'auto' }} transform={`translate(${cx}, ${cy + 25/transform.scale})`}>
-                      <rect x={-12/transform.scale} y={-12/transform.scale} width={24/transform.scale} height={24/transform.scale} fill="var(--color-red)" rx={4/transform.scale} />
+                    <g onClick={(e) => deleteZone(z.id, e)} style={{ cursor: 'pointer', pointerEvents: 'auto' }} transform={`translate(${cx}, ${cy + 31/transform.scale})`}>
+                      <rect x={-12/transform.scale} y={-12/transform.scale} width={24/transform.scale} height={24/transform.scale} fill={zoneStyle.stroke} rx={4/transform.scale} />
                       <path d="M-4,-4 L4,4 M-4,4 L4,-4" stroke="#fff" strokeWidth={2/transform.scale} />
                     </g>
                   )}
@@ -341,7 +576,7 @@ export default function ZonesMap({ mode = 'read-only', zones = [], fetchZones = 
             )}
 
             {/* Cámaras Renderizadas */}
-            {cameras.map(c => {
+            {mapCameras.map(c => {
               const cx = c.x * imageSize.width;
               const cy = c.y * imageSize.height;
               const isDraggable = mode === 'edit' && activeTool === 'camera';
@@ -371,6 +606,18 @@ export default function ZonesMap({ mode = 'read-only', zones = [], fetchZones = 
                       {c.id}
                     </text>
                   </g>
+
+                  {isDraggable && (
+                    <g
+                      transform={`translate(${14/transform.scale}, ${-14/transform.scale})`}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => handleDeleteCamera(c.id, c.name, e)}
+                      style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                    >
+                      <circle cx="0" cy="0" r={8/transform.scale} fill="var(--color-red)" stroke="#fff" strokeWidth={1.2/transform.scale} />
+                      <path d={`M${-3/transform.scale} ${-3/transform.scale} L${3/transform.scale} ${3/transform.scale} M${-3/transform.scale} ${3/transform.scale} L${3/transform.scale} ${-3/transform.scale}`} stroke="#fff" strokeWidth={1.8/transform.scale} strokeLinecap="round" />
+                    </g>
+                  )}
                 </g>
               );
             })}

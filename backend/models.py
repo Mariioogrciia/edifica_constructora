@@ -71,6 +71,34 @@ class RestrictedZoneORM(Base):
     polygon_points = Column(Text, nullable=False)  # JSON string
 
 
+class ConstructionZoneORM(Base):
+    __tablename__ = "construction_zones"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    name = Column(String, nullable=False)
+    zone_type = Column(String, nullable=False, default="Restringida")
+    camera_id = Column(String, nullable=True)
+    polygon_points = Column(Text, nullable=False)  # JSON string
+
+
+class CameraZoneAssignmentORM(Base):
+    """Tabla que vincula cámaras a zonas de forma persistente."""
+    __tablename__ = "camera_zone_assignments"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    camera_id = Column(String, nullable=False, unique=True, index=True)
+    zone_id = Column(Integer, ForeignKey("construction_zones.id"), nullable=False)
+
+
+class CameraMetadataORM(Base):
+    """Metadatos por cámara: fichero de vídeo asociado y otros datos ligeros."""
+    __tablename__ = "camera_metadata"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    camera_id = Column(String, nullable=False, unique=True, index=True)
+    video_url = Column(String, nullable=True)
+
+
 # ---------------------------------------------------------------------------
 # Pydantic Schemas (request / response)
 # ---------------------------------------------------------------------------
@@ -128,12 +156,60 @@ class ZonePoint(BaseModel):
 
 class ZoneCreate(BaseModel):
     name: str
+    zone_type: str = "Restringida"
+    camera_id: Optional[str] = None
     polygon_points: list[ZonePoint]
+
+
+class ZoneUpdate(BaseModel):
+    name: Optional[str] = None
+    zone_type: Optional[str] = None
+    camera_id: Optional[str] = None
+    polygon_points: Optional[list[ZonePoint]] = None
 
 
 class ZoneOut(BaseModel):
     id: int
     name: str
+    zone_type: str = "Restringida"
+    camera_id: Optional[str] = None
     polygon_points: list[ZonePoint]
+
+    model_config = {"from_attributes": True}
+
+
+# ── Cameras ──
+
+class CameraOut(BaseModel):
+    """Datos públicos de una cámara con su zona asignada."""
+    id: str
+    name: str
+    status: str = "online"
+    zone_id: Optional[int] = None
+    zone_name: Optional[str] = None
+    x: float = 0.0
+    y: float = 0.0
+    videoUrl: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class CameraZoneAssignmentOut(BaseModel):
+    """Asignación de cámara a zona."""
+    id: int
+    camera_id: str
+    zone_id: int
+
+    model_config = {"from_attributes": True}
+
+
+class CameraMetadataCreate(BaseModel):
+    videoUrl: str
+
+
+class CameraMetadataOut(BaseModel):
+    id: int
+    camera_id: str
+    videoUrl: Optional[str] = None
 
     model_config = {"from_attributes": True}

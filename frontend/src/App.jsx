@@ -9,7 +9,8 @@ import SettingsConsole from './components/SettingsConsole.jsx'
 import ZonesMap from './components/ZonesMap.jsx'
 
 const API_BASE = '/api'
-const WS_URL = `ws://${window.location.hostname}:8000/api/alerts/ws`
+const WS_PROTOCOL = window.location.protocol === 'https:' ? 'wss' : 'ws'
+const WS_URL = `${WS_PROTOCOL}://${window.location.host}/api/alerts/ws`
 
 /* ─── SVG Icons ─── */
 const I = {
@@ -50,6 +51,7 @@ const TYPE_LABELS = {
 const CAMERA_SECTORS = {
   'CAM-01': 'Sector Estructura', 'CAM-02': 'Zona de Carga',
   'CAM-03': 'Acceso Norte', 'CAM-04': 'Sector Instalaciones', 'CAM-05': 'Acopio Materiales',
+  'CAM-06': 'Exterior', 'CAM-07': 'Andamios',
 }
 
 function formatTime(iso) {
@@ -87,6 +89,124 @@ function timeAgo(iso, nowMs = Date.now()) {
   return `Hace ${Math.floor(min / 1440)}d`
 }
 
+function createDefaultCameras(hostname = window.location.hostname) {
+  return [
+    { id: 'CAM-01', name: 'Entrada Principal', status: 'online', zone: 'Acceso Norte', videoUrl: `http://${hostname}:8000/videos/Realistic_full_body_safety_mon (1).mp4`, x: 0.5, y: 0.8 },
+    { id: 'CAM-02', name: 'Zona de Carga', status: 'online', zone: 'Zona de Carga', videoUrl: `http://${hostname}:8000/videos/mp_.mp4`, x: 0.15, y: 0.15 },
+    { id: 'CAM-03', name: 'Planta Alta', status: 'online', zone: 'Planta Alta', videoUrl: `http://${hostname}:8000/videos/Create_a_realistic_safety_moni.mp4`, x: 0.15, y: 0.75 },
+    { id: 'CAM-04', name: 'Sótano', status: 'online', zone: 'Sótano', videoUrl: `http://${hostname}:8000/videos/Workers_relocating_materials_con…_202605281140.mp4`, x: 0.85, y: 0.85 },
+    { id: 'CAM-05', name: 'Acopio Materiales', status: 'online', zone: 'Acopio Materiales', videoUrl: `http://${hostname}:8000/videos/Worker_violates_safety_protocols_202605281155.mp4`, x: 0.85, y: 0.15 },
+    { id: 'CAM-06', name: 'Exterior', status: 'offline', zone: 'Exterior', x: 0.5, y: 0.2 },
+    { id: 'CAM-07', name: 'Andamios', status: 'online', zone: 'Andamios', videoUrl: `http://${hostname}:8000/videos/CCTV_footage_construction_site_c…_202605281346.mp4`, x: 0.5, y: 0.5 },
+  ]
+}
+
+function resolveVideoUrl(url) {
+  if (!url) return null
+  if (url.startsWith('http://') || url.startsWith('https://')) return url
+  if (url.startsWith('/videos/')) return `http://${window.location.hostname}:8000${url}`
+  return url
+}
+
+function loadStoredCameras() {
+  const base = createDefaultCameras()
+  try {
+    const saved = window.localStorage.getItem('edifica-cameras')
+    if (!saved) return base
+    const parsed = JSON.parse(saved)
+    if (!Array.isArray(parsed) || !parsed.length) return base
+    return parsed.map((camera, index) => ({
+      ...base[index % base.length],
+      ...camera,
+      id: camera.id || base[index % base.length]?.id || `CAM-${String(index + 1).padStart(2, '0')}`,
+      name: camera.name || base[index % base.length]?.name || `Cámara ${index + 1}`,
+      zone: camera.zone || base[index % base.length]?.zone || 'Pendiente',
+      status: camera.status || base[index % base.length]?.status || 'offline',
+    }))
+  } catch {
+    return base
+  }
+}
+
+function normalizeZonePoints(points = []) {
+  return (points || []).map(point => {
+    if (Array.isArray(point)) {
+      return { x: Number(point[0]) || 0, y: Number(point[1]) || 0 }
+    }
+    return { x: Number(point?.x) || 0, y: Number(point?.y) || 0 }
+  })
+}
+
+function polygonArea(points = []) {
+  if (!points || points.length < 3) return Number.POSITIVE_INFINITY
+  let area = 0
+  for (let i = 0; i < points.length; i += 1) {
+    const current = points[i]
+    const next = points[(i + 1) % points.length]
+    area += current.x * next.y - next.x * current.y
+  }
+  return Math.abs(area / 2)
+}
+
+function pointInPolygon(point, polygon = []) {
+  if (!point || !polygon || polygon.length < 3) return false
+  const { x, y } = point
+  let inside = false
+
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const xi = polygon[i].x
+    const yi = polygon[i].y
+    const xj = polygon[j].x
+    const yj = polygon[j].y
+
+    const intersects = ((yi > y) !== (yj > y)) && (
+      x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-12) + xi
+    )
+    if (intersects) inside = !inside
+  }
+
+  return inside
+}
+
+function getZoneForCameraPosition(camera, zones = []) {
+  if (!camera) return 'Pendiente'
+  const point = { x: Number(camera.x) || 0, y: Number(camera.y) || 0 }
+  const matches = zones
+    .map(zone => {
+      const points = normalizeZonePoints(zone.polygon_points || zone.points || [])
+      return {
+        name: zone.name || 'Pendiente',
+        points,
+        area: polygonArea(points),
+      }
+    })
+    .filter(zone => pointInPolygon(point, zone.points))
+    .sort((a, b) => a.area - b.area)
+
+  return matches[0]?.name || 'Pendiente'
+}
+
+function applyCameraZoneBindings(cameras = [], zones = []) {
+  if (!zones.length) return cameras
+  return cameras.map(camera => {
+    const zoneName = getZoneForCameraPosition(camera, zones)
+    return camera.zone === zoneName ? camera : { ...camera, zone: zoneName }
+  })
+}
+
+function normalizeZonesForUI(zones = []) {
+  return zones.map(zone => ({
+    ...zone,
+    zone_type: zone.zone_type || zone.type || 'Restringida',
+    camera_id: zone.camera_id || zone.camera || null,
+  }))
+}
+
+function getCameraZone(cameraId, cameras = []) {
+  const camera = cameras.find(item => item.id === cameraId)
+  return camera?.zone || CAMERA_SECTORS[cameraId] || 'Sector General'
+}
+
 export default function App() {
   const [alerts, setAlerts] = useState([])
   const [stats, setStats] = useState({ total: 0, pending: 0, resolved: 0, by_type: {}, employee_count: 0 })
@@ -109,12 +229,96 @@ export default function App() {
   const reconnectTimer = useRef(null)
   const [empForm, setEmpForm] = useState({ code: '', name: '', role: 'Operario' })
   const [empError, setEmpError] = useState('')
+  const [cameras, setCameras] = useState(() => loadStoredCameras())
+
+  const fetchCameras = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/cameras`)
+      if (!res.ok) return
+      const remote = await res.json()
+      const stored = loadStoredCameras()
+      // Video recién subido para la zona de acceso (archivo más reciente)
+      const ACCESS_VIDEO = '/videos/f_bc_f_f_b_e_db_a_emp_.mp4'
+          const merged = remote.map(r => {
+            const s = stored.find(sc => sc.id === r.id) || {}
+            let vUrl = resolveVideoUrl(r.videoUrl || null);
+            if (r.id === 'CAM-04') {
+              vUrl = resolveVideoUrl('/videos/Workers_relocating_materials_con…_202605281140.mp4');
+            } else if (r.id === 'CAM-05') {
+              vUrl = resolveVideoUrl('/videos/Worker_violates_safety_protocols_202605281155.mp4');
+            } else if (r.id === 'CAM-07') {
+              vUrl = resolveVideoUrl('/videos/CCTV_footage_construction_site_c…_202605281346.mp4');
+            }
+            return {
+              id: r.id,
+              name: r.name || s.name || r.id,
+              status: r.status || s.status || 'online',
+              zone: r.zone_name || s.zone || 'Pendiente',
+              // Preferir siempre el `videoUrl` que venga del backend; no usar el guardado en localStorage
+              videoUrl: vUrl,
+              zone_id: r.zone_id || s.zone_id || null,
+              x: typeof s.x === 'number' ? s.x : (s.x || 0),
+              y: typeof s.y === 'number' ? s.y : (s.y || 0),
+            }
+          })
+
+          // Si la API no devuelve cámaras o ninguna tiene `videoUrl`, usar los vídeos locales como fallback
+          const hasAnyVideo = merged.some(c => !!c.videoUrl)
+          if (!merged.length || !hasAnyVideo) {
+            try {
+              const vidRes = await fetch(`${API_BASE}/videos`)
+              if (vidRes.ok) {
+                const files = await vidRes.json()
+                if (Array.isArray(files) && files.length) {
+                  const fallback = merged.length ? merged.map((cam, idx) => ({
+                    ...cam,
+                    videoUrl: cam.id === 'CAM-07' ? resolveVideoUrl('/videos/CCTV_footage_construction_site_c…_202605281346.mp4') : (cam.id === 'CAM-05' ? resolveVideoUrl('/videos/Worker_violates_safety_protocols_202605281155.mp4') : (cam.id === 'CAM-04' ? resolveVideoUrl('/videos/Workers_relocating_materials_con…_202605281140.mp4') : resolveVideoUrl(files[idx % files.length]?.url)))
+                  })) : files.map((f, idx) => {
+                    const id = `CAM-${String(idx + 1).padStart(2, '0')}`
+                    return {
+                      id,
+                      name: id,
+                      status: 'online',
+                      zone: 'Pendiente',
+                      videoUrl: id === 'CAM-07' ? resolveVideoUrl('/videos/CCTV_footage_construction_site_c…_202605281346.mp4') : (id === 'CAM-05' ? resolveVideoUrl('/videos/Worker_violates_safety_protocols_202605281155.mp4') : (id === 'CAM-04' ? resolveVideoUrl('/videos/Workers_relocating_materials_con…_202605281140.mp4') : resolveVideoUrl(f.url))),
+                      zone_id: null,
+                      x: 0,
+                      y: 0,
+                    }
+                  })
+                  setCameras(fallback)
+                  return
+                }
+              }
+            } catch (e) {
+              console.warn('Error fetching local videos for fallback', e)
+            }
+          }
+      setCameras(merged)
+    } catch (e) {
+      console.warn('Error fetching cameras from API', e)
+    }
+  }, [])
 
   const pushToast = useCallback((toast) => {
     const id = toast.id || `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
     setToasts(prev => [...prev.slice(-4), { ...toast, id }])
   }, [])
 
+  
+  // Mantener los contadores sincronizados localmente para que todas las vistas
+  // muestren el mismo número inmediatamente cuando cambian `alerts`.
+  useEffect(() => {
+    try {
+      const total = alerts.length
+      const pending = alerts.filter(a => !a.resolved).length
+      const resolved = total - pending
+      setStats(prev => ({ ...prev, total, pending, resolved }))
+    } catch (e) {
+      // no bloquear la app si hay algún dato inesperado
+      console.warn('Error sincronizando contadores de incidencias', e)
+    }
+  }, [alerts])
   // ── Fetchers ──
   const fetchAlerts = useCallback(async () => {
     try {
@@ -124,9 +328,57 @@ export default function App() {
     } catch (e) { console.warn('Fetch alerts err:', e) }
   }, [tab])
   const fetchStats = useCallback(async () => { try { const r = await fetch(`${API_BASE}/stats`); if (r.ok) setStats(await r.json()) } catch {} }, [])
-  const fetchZones = useCallback(async () => { try { const r = await fetch(`${API_BASE}/zones`); if (r.ok) setZones(await r.json()) } catch {} }, [])
+  const fetchZones = useCallback(async () => { try { const r = await fetch(`${API_BASE}/zones`); if (r.ok) setZones(normalizeZonesForUI(await r.json())) } catch {} }, [])
   const fetchEmployees = useCallback(async () => { try { const r = await fetch(`${API_BASE}/employees`); if (r.ok) setEmployees(await r.json()) } catch {} }, [])
+  
+  const updateCameraZoneInDB = useCallback(async (cameraId, zoneId) => {
+    try {
+      await fetch(`${API_BASE}/cameras/${encodeURIComponent(cameraId)}/zone`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ zone_id: zoneId })
+      })
+    } catch (e) { console.warn('Error updating camera zone:', e) }
+  }, [])
   const resolveAlert = useCallback(async (id, resolved) => { try { await fetch(`${API_BASE}/alerts/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resolved }) }); fetchAlerts(); fetchStats() } catch {} }, [fetchAlerts, fetchStats])
+  const deleteAlert = useCallback(async (id) => { try { await fetch(`${API_BASE}/alerts/${id}`, { method: 'DELETE' }); if (selectedAlert?.id === id) setSelectedAlert(null); fetchAlerts(); fetchStats() } catch {} }, [fetchAlerts, fetchStats, selectedAlert])
+  const clearResolvedAlerts = useCallback(async () => { try { await fetch(`${API_BASE}/alerts?resolved=true`, { method: 'DELETE' }); fetchAlerts(); fetchStats() } catch {} }, [fetchAlerts, fetchStats])
+
+  const startCameraAnalysis = useCallback(async (cameraId, videoUrl) => {
+    if (!cameraId || !videoUrl) return
+    try {
+      await fetch(`${API_BASE}/analyze/start?camera_id=${encodeURIComponent(cameraId)}&video_url=${encodeURIComponent(videoUrl)}`, { method: 'POST' })
+    } catch {}
+  }, [])
+
+  const stopCameraAnalysis = useCallback(async (cameraId) => {
+    if (!cameraId) return
+    try {
+      await fetch(`${API_BASE}/analyze/stop?camera_id=${encodeURIComponent(cameraId)}`, { method: 'POST' })
+    } catch {}
+  }, [])
+
+  const handleVideoPlay = useCallback((cameraId, videoUrl) => (e) => {
+    const videoEl = e.target
+    videoEl.dataset.started = 'true'
+    startCameraAnalysis(cameraId, videoUrl)
+  }, [startCameraAnalysis])
+
+  const handleVideoPause = useCallback((cameraId) => (e) => {
+    const videoEl = e.target
+    setTimeout(() => {
+      if (videoEl.paused) {
+        videoEl.dataset.started = 'false'
+        stopCameraAnalysis(cameraId)
+      }
+    }, 400)
+  }, [stopCameraAnalysis])
+
+  const handleVideoEnded = useCallback((cameraId) => (e) => {
+    e.target.dataset.started = 'false'
+    stopCameraAnalysis(cameraId)
+  }, [stopCameraAnalysis])
+
   const createEmployee = useCallback(async (e) => { e.preventDefault(); setEmpError(''); if (!empForm.code.trim()||!empForm.name.trim()) { setEmpError('Campos obligatorios.'); return } try { const r = await fetch(`${API_BASE}/employees`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(empForm) }); if (r.ok) { setEmpForm({code:'',name:'',role:'Operario'}); fetchEmployees(); fetchStats() } else { const d=await r.json(); setEmpError(d.detail||'Error') } } catch { setEmpError('Sin conexión.') } }, [empForm, fetchEmployees, fetchStats])
   const deleteEmployee = useCallback(async (id) => { try { await fetch(`${API_BASE}/employees/${id}`, {method:'DELETE'}); fetchEmployees(); fetchStats() } catch {} }, [fetchEmployees, fetchStats])
 
@@ -140,7 +392,7 @@ export default function App() {
     ws.onerror = () => { ws.close() }
   }, [fetchAlerts, fetchStats, pushToast])
 
-  useEffect(() => { fetchAlerts(); fetchStats(); fetchZones(); fetchEmployees(); connectWs(); const i=setInterval(()=>{fetchAlerts();fetchStats()},15000); return ()=>{clearInterval(i);clearTimeout(reconnectTimer.current);wsRef.current?.close()} }, []) // eslint-disable-line
+  useEffect(() => { fetchAlerts(); fetchStats(); fetchZones(); fetchCameras(); fetchEmployees(); connectWs(); const i=setInterval(()=>{fetchAlerts();fetchStats()},15000); return ()=>{clearInterval(i);clearTimeout(reconnectTimer.current);wsRef.current?.close()} }, []) // eslint-disable-line
   useEffect(() => { fetchAlerts() }, [fetchAlerts])
   useEffect(() => { if (!toasts.length) return; const t=setTimeout(()=>setToasts(p=>p.slice(1)),5500); return ()=>clearTimeout(t) }, [toasts])
   useEffect(() => {
@@ -148,21 +400,46 @@ export default function App() {
     return () => clearInterval(timer)
   }, [])
 
-  // ── Camera config ──
-  const CAMERAS = [
-    { id: 'CAM-01', name: 'Entrada Principal', status: 'online', videoUrl: `http://${window.location.hostname}:8000/videos/Realistic_full_body_safety_mon (1).mp4` },
-    { id: 'CAM-02', name: 'Zona de Carga', status: 'online', videoUrl: `http://${window.location.hostname}:8000/videos/mp_.mp4` },
-    { id: 'CAM-03', name: 'Planta Alta', status: 'online', videoUrl: `http://${window.location.hostname}:8000/videos/Create_a_realistic_safety_moni.mp4` },
-    { id: 'CAM-04', name: 'Sótano', status: 'offline' },
-    { id: 'CAM-05', name: 'Acopio Materiales', status: 'online' },
-    
-  ]
+  useEffect(() => {
+    try {
+      // Persist camera UI positions but avoid overriding `videoUrl` persisted en backend.
+      const snapshot = cameras.map(c => ({ id: c.id, name: c.name, status: c.status, zone: c.zone, x: c.x, y: c.y }))
+      window.localStorage.setItem('edifica-cameras', JSON.stringify(snapshot))
+    } catch {}
+  }, [cameras])
+
+  useEffect(() => {
+    if (!zones.length) return
+    setCameras(prev => {
+      const updated = applyCameraZoneBindings(prev, zones)
+      // Save updated zone assignments to database for each camera
+      updated.forEach(camera => {
+        const matchingZone = zones.find(zone => zone.name === camera.zone)
+        if (matchingZone) {
+          updateCameraZoneInDB(camera.id, matchingZone.id)
+        }
+      })
+      return updated
+    })
+  }, [zones, updateCameraZoneInDB])
 
   const pendingAlerts = alerts.filter(a => !a.resolved)
   const byType = stats.by_type || {}
-  const [featuredCamId, setFeaturedCamId] = useState(CAMERAS[0].id)
-  const featuredCam = CAMERAS.find(c => c.id === featuredCamId) || CAMERAS[0]
-  const secondaryCams = CAMERAS.filter(c => c.id !== featuredCamId)
+  const [featuredCamId, setFeaturedCamId] = useState(() => loadStoredCameras()[0]?.id || 'CAM-01')
+  const featuredCam = cameras.find(c => c.id === featuredCamId) || cameras[0]
+  const secondaryCams = cameras.filter(c => c.id !== featuredCamId)
+  const cameraZoneLabel = (cameraId) => getCameraZone(cameraId, cameras)
+  const handleCamerasChange = useCallback((updatedCameras) => {
+    const bindingsCameras = applyCameraZoneBindings(updatedCameras, zones)
+    setCameras(bindingsCameras)
+    // Save zone assignments to database
+    bindingsCameras.forEach(camera => {
+      const matchingZone = zones.find(zone => zone.name === camera.zone)
+      if (matchingZone) {
+        updateCameraZoneInDB(camera.id, matchingZone.id)
+      }
+    })
+  }, [zones, updateCameraZoneInDB])
   const nowTime = new Date(clockNow).toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit', second:'2-digit' })
 
   const incidentRows = alerts
@@ -176,7 +453,7 @@ export default function App() {
         typeDesc: typeInfo.desc,
         severity,
         severityKey: severity.toLowerCase(),
-        zone: CAMERA_SECTORS[a.camera_id] || 'Sector General',
+        zone: cameraZoneLabel(a.camera_id),
         statusLabel: a.resolved ? 'Resuelta' : 'Pendiente',
         eventDate,
       }
@@ -306,7 +583,7 @@ export default function App() {
         </div>
 
         {/* ── Page Content ── */}
-        <div className="page-content">
+        <div className={`page-content ${currentView === 'zones' ? 'page-content--zones' : ''}`}>
 
           {/* ════════ CAMERAS VIEW ════════ */}
           {currentView === 'cameras' && (
@@ -318,6 +595,7 @@ export default function App() {
                     <div>
                       <div className="cam-card__label">Cámara destacada</div>
                       <div className="cam-card__name">{featuredCam.name} <span className="cam-card__name-id">({featuredCam.id})</span></div>
+                      <div className="cam-card__zone">Zona: {featuredCam.zone || 'Sin zona asignada'}</div>
                     </div>
                     <span className="cam-status cam-status--recording"><span className="cam-status__dot"></span> Grabando</span>
                   </div>
@@ -325,6 +603,9 @@ export default function App() {
                     {featuredCam.videoUrl ? (
                       <video
                           src={featuredCam.videoUrl} controls loop muted playsInline
+                          onPlay={handleVideoPlay(featuredCam.id, featuredCam.videoUrl)}
+                          onPause={handleVideoPause(featuredCam.id)}
+                          onEnded={handleVideoEnded(featuredCam.id)}
                         />
                     ) : (
                       <div className="cam-feed__placeholder">{I.wifi}<div className="cam-feed__placeholder-text">Stream local activo</div></div>
@@ -340,7 +621,7 @@ export default function App() {
                     <div className="stat-block">
                       <div className="stat-block__label">Total cámaras</div>
                       <div className="stat-block__row">
-                        <span className="stat-block__value">{CAMERAS.length}</span>
+                        <span className="stat-block__value">{cameras.length}</span>
                         <span className="stat-block__icon" style={{fill:'var(--text-muted)'}}>{I.camera}</span>
                       </div>
                       <div className="stat-block__sub">Cámaras instaladas</div>
@@ -348,15 +629,15 @@ export default function App() {
                     <div className="stat-block">
                       <div className="stat-block__label">En línea</div>
                       <div className="stat-block__row">
-                        <span className="stat-block__value">{CAMERAS.filter(c=>c.status==='online').length}</span>
+                        <span className="stat-block__value">{cameras.filter(c=>c.status==='online').length}</span>
                         <span className="stat-block__icon" style={{fill:'var(--color-emerald)'}}>{I.wifi}</span>
                       </div>
-                      <div className="stat-block__sub">{Math.round(CAMERAS.filter(c=>c.status==='online').length/CAMERAS.length*100)}% del total</div>
+                      <div className="stat-block__sub">{cameras.length ? Math.round(cameras.filter(c=>c.status==='online').length/cameras.length*100) : 0}% del total</div>
                     </div>
                     <div className="stat-block">
                       <div className="stat-block__label">Grabando</div>
                       <div className="stat-block__row">
-                        <span className="stat-block__value">{CAMERAS.filter(c=>c.status==='online'&&c.videoUrl).length}</span>
+                        <span className="stat-block__value">{cameras.filter(c=>c.status==='online'&&c.videoUrl).length}</span>
                         <span className="stat-block__icon" style={{fill:'var(--color-blue)'}}>{I.camera}</span>
                       </div>
                       <div className="stat-block__sub">Cámaras activas</div>
@@ -364,7 +645,7 @@ export default function App() {
                     <div className="stat-block stat-block--danger">
                       <div className="stat-block__label">Sin señal</div>
                       <div className="stat-block__row">
-                        <span className="stat-block__value">{CAMERAS.filter(c=>c.status==='offline').length}</span>
+                        <span className="stat-block__value">{cameras.filter(c=>c.status==='offline').length}</span>
                         <span className="stat-block__icon" style={{fill:'var(--color-red)'}}>{I.noSignal}</span>
                       </div>
                       <div className="stat-block__sub">Requieren atención</div>
@@ -379,7 +660,10 @@ export default function App() {
                   {secondaryCams.map(cam => (
                     <div className="cam-card" key={cam.id} onClick={() => setFeaturedCamId(cam.id)} style={{cursor:'pointer'}}>
                       <div className="cam-card__header">
-                        <div className="cam-card__name">{cam.name} <span className="cam-card__name-id">({cam.id})</span></div>
+                        <div>
+                          <div className="cam-card__name">{cam.name} <span className="cam-card__name-id">({cam.id})</span></div>
+                          <div className="cam-card__zone">Zona: {cam.zone || 'Sin zona asignada'}</div>
+                        </div>
                         <span className={`cam-status ${cam.status === 'online' ? 'cam-status--recording' : 'cam-status--nosignal'}`}>
                           <span className="cam-status__dot"></span>
                           {cam.status === 'online' ? 'Grabando' : 'Sin señal'}
@@ -390,8 +674,6 @@ export default function App() {
                           cam.videoUrl ? (
                             <video
                               src={cam.videoUrl} muted playsInline loop
-                              onPlay={async (e) => { if (e.target.dataset.started==='true') return; e.target.dataset.started='true'; try { await fetch(`${API_BASE}/analyze/start?camera_id=${cam.id}&video_url=${encodeURIComponent(cam.videoUrl)}`, {method:'POST'}) } catch {} }}
-                              onPause={async (e) => { const v=e.target; setTimeout(async()=>{if(v.paused){v.dataset.started='false';try{await fetch(`${API_BASE}/analyze/stop?camera_id=${cam.id}`,{method:'POST'})}catch{}}},500) }}
                               onMouseEnter={(e) => e.target.play().catch(()=>{})}
                               onMouseLeave={(e) => e.target.pause()}
                             />
@@ -436,7 +718,7 @@ export default function App() {
                         <div className="activity-item" key={`act-${a.id}`}>
                           <div className={`activity-icon ${iconColor}`}>{I.bell}</div>
                           <div className="activity-info">
-                            <div className="activity-cam">{a.camera_id} ({CAMERA_SECTORS[a.camera_id]?.split(' ').pop() || ''})</div>
+                            <div className="activity-cam">{a.camera_id} ({cameraZoneLabel(a.camera_id)})</div>
                             <div className="activity-desc">{ti.desc}</div>
                           </div>
                           <div className="activity-time">{timeAgo(a.timestamp, clockNow)}</div>
@@ -501,7 +783,7 @@ export default function App() {
                     {pendingAlerts.slice(0,5).map(a => { const ti=TYPE_LABELS[a.type]||{label:a.type,badge:'alert-badge--hardhat',severity:'Media',desc:a.type}; return (
                       <div className="alert-item" key={a.id} onClick={()=>setSelectedAlert(a)}>
                         <div className="alert-thumb">{a.snapshot_path && <img src={a.snapshot_path} alt="" loading="lazy"/>}</div>
-                        <div className="alert-info"><div className={`alert-badge ${ti.badge}`}>{ti.label}</div><div className="alert-meta"><strong>{a.camera_id}</strong> · {CAMERA_SECTORS[a.camera_id]||'Sector General'}</div><div className="alert-meta-sub">{timeAgo(a.timestamp, clockNow)} · {formatTime(a.timestamp)}</div></div>
+                        <div className="alert-info"><div className={`alert-badge ${ti.badge}`}>{ti.label}</div><div className="alert-meta"><strong>{a.camera_id}</strong> · {cameraZoneLabel(a.camera_id)}</div><div className="alert-meta-sub">{timeAgo(a.timestamp, clockNow)} · {formatTime(a.timestamp)}</div></div>
                         <div className={`alert-severity alert-severity--${ti.severity.toLowerCase()}`}>{ti.severity}</div><span className="alert-arrow">›</span>
                       </div>
                     )})}
@@ -510,8 +792,8 @@ export default function App() {
                   <div className="panel-footer">Mostrando {Math.min(pendingAlerts.length,5)} de {pendingAlerts.length} alertas</div>
                 </div>
                 <div className="panel panel--hero dashboard-zones-panel">
-                  <div className="panel-header"><h2 className="panel-title">Zonas restringidas</h2><button className="panel-action" onClick={() => setCurrentView('zones')}>Gestionar</button></div>
-                  <div className="zones-map-area" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}><ZonesMap mode="read-only" zones={zones} /></div>
+                  <div className="panel-header"><h2 className="panel-title">Zonas de obra</h2><button className="panel-action" onClick={() => setCurrentView('zones')}>Gestionar</button></div>
+                  <div className="zones-map-area" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}><ZonesMap mode="read-only" zones={zones} cameras={cameras} /></div>
                   <div className="panel-footer zones-footer-stats" style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
                     <div style={{ display: 'flex', gap: 'var(--sp-xl)' }}>
                       <div className="zones-footer-stat"><span className="zones-footer-dot" style={{background:'var(--color-red)'}}></span>Zonas activas <strong style={{color:'var(--text-primary)',marginLeft:'4px'}}>{zones.length || 3}</strong></div>
@@ -530,7 +812,7 @@ export default function App() {
                         <button className="panel-action" onClick={()=>setCurrentView('cameras')}>Ver todas</button>
                       </div>
                     <div className="cameras-mini-grid">
-                      {CAMERAS.slice(0,4).map(c => (
+                      {cameras.slice(0,4).map(c => (
                         <div className="camera-mini" key={c.id} onClick={() => setFeaturedCamId(c.id)} style={{cursor:'pointer'}}>
                           <div className="camera-mini__feed">
                             {c.status === 'online' ? (
@@ -541,6 +823,9 @@ export default function App() {
                                   playsInline
                                   loop
                                   preload="metadata"
+                                  onPlay={handleVideoPlay(c.id, c.videoUrl)}
+                                  onPause={handleVideoPause(c.id)}
+                                  onEnded={handleVideoEnded(c.id)}
                                   onMouseEnter={(e) => e.target.play().catch(() => {})}
                                   onMouseLeave={(e) => e.target.pause()}
                                 />
@@ -553,6 +838,7 @@ export default function App() {
                           </div>
                           <div className="camera-mini__info">
                             <span className="camera-mini__name">{c.id} · {c.name.split(' ')[0]}</span>
+                            <span className="camera-mini__zone">{c.zone || 'Sin zona'}</span>
                             <span className={`camera-mini__status camera-mini__status--${c.status}`}>{c.status === 'online' ? 'En línea' : 'Sin señal'}</span>
                           </div>
                         </div>
@@ -578,6 +864,7 @@ export default function App() {
                 </div>
                 <div className="incidents-page-actions">
                   <div className="incidents-search">{I.search}<input value={incidentSearch} onChange={(e)=>setIncidentSearch(e.target.value)} type="text" placeholder="Buscar por cámara, zona o tipo..." /></div>
+                  <button className="btn btn--ghost btn--sm" onClick={clearResolvedAlerts} disabled={kpiResolved === 0}>Eliminar resueltas</button>
                   <button className="top-bar__action">Salir de zona</button>
                 </div>
               </div>
@@ -654,6 +941,7 @@ export default function App() {
                         <button className="inc-action-btn" onClick={() => setSelectedAlert(a)}>Ver detalle</button>
                         {!a.resolved && <button className="inc-action-btn" onClick={() => resolveAlert(a.id, true)}>Resolver</button>}
                         {a.resolved && <button className="inc-action-btn" onClick={() => resolveAlert(a.id, false)}>Reabrir</button>}
+                        {a.resolved && <button className="inc-action-btn" onClick={() => deleteAlert(a.id)}>Eliminar</button>}
                         <button className="inc-action-btn" onClick={() => { setFeaturedCamId(a.camera_id); setCurrentView('cameras') }}>Abrir cámara</button>
                       </div>
                     </div>
@@ -667,7 +955,7 @@ export default function App() {
           {/* ════════ SETTINGS / REPORTS / ANALYTICS (placeholders) ════════ */}
           {currentView === 'settings' && (
             <SettingsConsole
-              cameras={CAMERAS}
+              cameras={cameras}
               zones={zones}
               onNotify={pushToast}
             />
@@ -679,10 +967,10 @@ export default function App() {
 
           {/* ════════ ZONES (from dashboard link) ════════ */}
           {currentView === 'zones' && (
-            <div className="panel panel--flex">
-              <div className="panel-header"><h2 className="panel-title">Zonas restringidas</h2></div>
-              <div className="panel-body" style={{ flex: 1, display: 'flex', padding: 0 }}>
-                <ZonesMap mode="edit" zones={zones} fetchZones={fetchZones} />
+            <div className="panel panel--flex zones-panel">
+              <div className="panel-header"><h2 className="panel-title">Zonas de obra</h2></div>
+              <div className="panel-body" style={{ flex: 1, display: 'flex', padding: 0, minHeight: 0 }}>
+                <ZonesMap mode="edit" zones={zones} cameras={cameras} fetchZones={fetchZones} onCamerasChange={handleCamerasChange} onNotify={pushToast} />
               </div>
             </div>
           )}

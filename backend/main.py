@@ -46,6 +46,12 @@ from models import (
     AlertOut,
     AlertResolve,
     AlertType,
+    CameraOut,
+    CameraZoneAssignmentORM,
+    CameraZoneAssignmentOut,
+    CameraMetadataORM,
+    CameraMetadataOut,
+    ConstructionZoneORM,
     EmployeeCreate,
     EmployeeORM,
     EmployeeOut,
@@ -53,6 +59,7 @@ from models import (
     ZoneCreate,
     ZoneOut,
     ZonePoint,
+    ZoneUpdate,
 )
 
 # ---------------------------------------------------------------------------
@@ -96,7 +103,63 @@ manager = ConnectionManager()
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     await init_db()
+    await _migrate_zones()
+    await _initialize_camera_assignments()
     yield
+
+
+async def _migrate_zones():
+    """Copy legacy restricted zones into the richer construction zones table if needed."""
+    async with async_session() as db:
+        existing = await db.execute(select(func.count(ConstructionZoneORM.id)))
+        new_count = existing.scalar() or 0
+        if new_count > 0:
+            return
+
+        legacy = await db.execute(select(RestrictedZoneORM))
+        legacy_rows = legacy.scalars().all()
+        if not legacy_rows:
+            return
+
+        for row in legacy_rows:
+            points = json.loads(row.polygon_points) if isinstance(row.polygon_points, str) else row.polygon_points
+            db.add(
+                ConstructionZoneORM(
+                    name=row.name,
+                    zone_type="Restringida",
+                    camera_id=None,
+                    polygon_points=json.dumps(points),
+                )
+            )
+        await db.commit()
+
+
+async def _initialize_camera_assignments():
+    """Initialize camera to zone assignments from environment or defaults."""
+    async with async_session() as db:
+        zones = await db.execute(select(ConstructionZoneORM).order_by(ConstructionZoneORM.id))
+        zone_list = zones.scalars().all()
+        if not zone_list:
+            return
+        
+        # Default camera IDs
+        camera_ids = ["CAM-01", "CAM-02", "CAM-03", "CAM-04", "CAM-05", "CAM-06", "CAM-07"]
+        first_zone = zone_list[0]
+        
+        for cam_id in camera_ids:
+            existing_assignment = await db.execute(
+                select(CameraZoneAssignmentORM).where(CameraZoneAssignmentORM.camera_id == cam_id)
+            )
+            if existing_assignment.scalar_one_or_none():
+                continue
+            
+            db.add(
+                CameraZoneAssignmentORM(
+                    camera_id=cam_id,
+                    zone_id=first_zone.id,
+                )
+            )
+        await db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +323,26 @@ async def resolve_alert(alert_id: int, body: AlertResolve, db=Depends(get_db)):
     return alert
 
 
+@app.delete("/api/alerts/{alert_id}", status_code=204)
+async def delete_alert(alert_id: int, db=Depends(get_db)):
+    from sqlalchemy import delete as sql_delete
+    result = await db.execute(select(AlertORM).where(AlertORM.id == alert_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Alerta no encontrada")
+    await db.execute(sql_delete(AlertORM).where(AlertORM.id == alert_id))
+    await db.commit()
+
+
+@app.delete("/api/alerts", status_code=204)
+async def delete_alerts(resolved: Optional[bool] = Query(None), db=Depends(get_db)):
+    from sqlalchemy import delete as sql_delete
+    stmt = sql_delete(AlertORM)
+    if resolved is not None:
+      stmt = stmt.where(AlertORM.resolved == resolved)
+    await db.execute(stmt)
+    await db.commit()
+
+
 @app.get("/api/stats")
 async def get_stats(db=Depends(get_db)):
     """Estadísticas agregadas para el dashboard."""
@@ -331,35 +414,228 @@ async def delete_employee(employee_id: int, db=Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
+# ENDPOINTS – Cámaras y Asignaciones de Zona
+# ---------------------------------------------------------------------------
+
+@app.get("/api/cameras", response_model=list[CameraOut])
+async def list_cameras(db=Depends(get_db)):
+    """Lista todas las cámaras con su asignación de zona actual."""
+    assignments = await db.execute(select(CameraZoneAssignmentORM))
+    all_assignments = assignments.scalars().all()
+    
+    zones_result = await db.execute(select(ConstructionZoneORM))
+    all_zones = {z.id: z.name for z in zones_result.scalars().all()}
+
+    # cargar metadatos de cámara (videoUrl)
+    meta_result = await db.execute(select(CameraMetadataORM))
+    meta_list = meta_result.scalars().all()
+    meta_map = {m.camera_id: m.video_url for m in meta_list}
+    
+    out = []
+    for assignment in all_assignments:
+        zone_name = all_zones.get(assignment.zone_id, "Pendiente")
+        out.append(
+            CameraOut(
+                id=assignment.camera_id,
+                name=assignment.camera_id,
+                status="online",
+                zone_id=assignment.zone_id,
+                zone_name=zone_name,
+                x=0.0,
+                y=0.0,
+                videoUrl=meta_map.get(assignment.camera_id),
+            )
+        )
+    return out
+
+
+@app.post("/api/cameras/{camera_id}/video", response_model=CameraOut)
+async def set_camera_video(camera_id: str, body: dict, db=Depends(get_db)):
+    """Asigna o actualiza el `videoUrl` persistente para una cámara."""
+    video = body.get("videoUrl") or body.get("video_url")
+    if not video:
+        raise HTTPException(status_code=400, detail="videoUrl requerido en el body")
+
+    # Upsert metadata
+    result = await db.execute(select(CameraMetadataORM).where(CameraMetadataORM.camera_id == camera_id))
+    meta = result.scalar_one_or_none()
+    if meta:
+        meta.video_url = video
+    else:
+        meta = CameraMetadataORM(camera_id=camera_id, video_url=video)
+        db.add(meta)
+
+    await db.commit()
+    await db.refresh(meta)
+
+    # devolver la info de cámara actualizada
+    assignment_result = await db.execute(select(CameraZoneAssignmentORM).where(CameraZoneAssignmentORM.camera_id == camera_id))
+    assignment = assignment_result.scalar_one_or_none()
+    zone_id = assignment.zone_id if assignment else None
+    zone_name = None
+    if zone_id:
+        z = (await db.execute(select(ConstructionZoneORM).where(ConstructionZoneORM.id == zone_id))).scalar_one_or_none()
+        zone_name = z.name if z else None
+
+    return CameraOut(
+        id=camera_id,
+        name=camera_id,
+        status="online",
+        zone_id=zone_id,
+        zone_name=zone_name,
+        x=0.0,
+        y=0.0,
+        videoUrl=meta.video_url,
+    )
+
+
+@app.get("/api/cameras/{camera_id}/zone", response_model=dict)
+async def get_camera_zone(camera_id: str, db=Depends(get_db)):
+    """Obtiene la zona asignada a una cámara."""
+    result = await db.execute(
+        select(CameraZoneAssignmentORM).where(CameraZoneAssignmentORM.camera_id == camera_id)
+    )
+    assignment = result.scalar_one_or_none()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Cámara no asignada a ninguna zona")
+    
+    zone_result = await db.execute(
+        select(ConstructionZoneORM).where(ConstructionZoneORM.id == assignment.zone_id)
+    )
+    zone = zone_result.scalar_one_or_none()
+    
+    return {
+        "camera_id": assignment.camera_id,
+        "zone_id": assignment.zone_id,
+        "zone_name": zone.name if zone else "Pendiente",
+    }
+
+
+@app.post("/api/cameras/{camera_id}/zone", response_model=CameraZoneAssignmentOut)
+async def assign_camera_to_zone(
+    camera_id: str,
+    body: dict,
+    db=Depends(get_db)
+):
+    """Asigna (o reasigna) una cámara a una zona."""
+    zone_id = body.get("zone_id")
+    if not zone_id:
+        raise HTTPException(status_code=400, detail="zone_id requerido")
+    
+    # Verificar que la zona existe
+    zone_result = await db.execute(
+        select(ConstructionZoneORM).where(ConstructionZoneORM.id == zone_id)
+    )
+    if not zone_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Zona no encontrada")
+    
+    # Buscar si ya existe una asignación
+    assignment_result = await db.execute(
+        select(CameraZoneAssignmentORM).where(CameraZoneAssignmentORM.camera_id == camera_id)
+    )
+    assignment = assignment_result.scalar_one_or_none()
+    
+    if assignment:
+        # Actualizar la asignación existente
+        assignment.zone_id = zone_id
+    else:
+        # Crear una nueva asignación
+        assignment = CameraZoneAssignmentORM(
+            camera_id=camera_id,
+            zone_id=zone_id,
+        )
+        db.add(assignment)
+    
+    await db.commit()
+    await db.refresh(assignment)
+    return CameraZoneAssignmentOut(
+        id=assignment.id,
+        camera_id=assignment.camera_id,
+        zone_id=assignment.zone_id,
+    )
+
+
+# ---------------------------------------------------------------------------
 # ENDPOINTS – Zonas Restringidas
 # ---------------------------------------------------------------------------
 
 @app.get("/api/zones", response_model=list[ZoneOut])
 async def list_zones(db=Depends(get_db)):
-    result = await db.execute(select(RestrictedZoneORM))
+    result = await db.execute(select(ConstructionZoneORM).order_by(ConstructionZoneORM.id))
     zones = result.scalars().all()
+    if not zones:
+        legacy_result = await db.execute(select(RestrictedZoneORM).order_by(RestrictedZoneORM.id))
+        zones = legacy_result.scalars().all()
     out = []
     for z in zones:
         points = json.loads(z.polygon_points) if isinstance(z.polygon_points, str) else z.polygon_points
-        out.append(ZoneOut(id=cast(int, z.id), name=cast(str, z.name), polygon_points=[ZonePoint(**p) for p in points]))
+        out.append(
+            ZoneOut(
+                id=cast(int, z.id),
+                name=cast(str, z.name),
+                zone_type=cast(str, getattr(z, "zone_type", "Restringida")),
+                camera_id=cast(Optional[str], getattr(z, "camera_id", None)),
+                polygon_points=[ZonePoint(**p) for p in points],
+            )
+        )
     return out
 
 
 @app.post("/api/zones", response_model=ZoneOut, status_code=201)
 async def create_zone(zone: ZoneCreate, db=Depends(get_db)):
-    orm = RestrictedZoneORM(
+    orm = ConstructionZoneORM(
         name=zone.name,
+        zone_type=zone.zone_type,
+        camera_id=zone.camera_id,
         polygon_points=json.dumps([p.model_dump() for p in zone.polygon_points]),
     )
     db.add(orm)
     await db.commit()
     await db.refresh(orm)
-    return ZoneOut(id=cast(int, orm.id), name=cast(str, orm.name), polygon_points=zone.polygon_points)
+    return ZoneOut(
+        id=cast(int, orm.id),
+        name=cast(str, orm.name),
+        zone_type=cast(str, orm.zone_type),
+        camera_id=cast(Optional[str], orm.camera_id),
+        polygon_points=zone.polygon_points,
+    )
+
+
+@app.patch("/api/zones/{zone_id}", response_model=ZoneOut)
+async def update_zone(zone_id: int, body: ZoneUpdate, db=Depends(get_db)):
+    result = await db.execute(select(ConstructionZoneORM).where(ConstructionZoneORM.id == zone_id))
+    orm = result.scalar_one_or_none()
+    if orm is None:
+        raise HTTPException(status_code=404, detail="Zona no encontrada")
+
+    payload = body.model_dump(exclude_unset=True)
+    if "name" in payload:
+        orm.name = payload["name"]
+    if "zone_type" in payload:
+        orm.zone_type = payload["zone_type"]
+    if "camera_id" in payload:
+        orm.camera_id = payload["camera_id"] or None
+    if "polygon_points" in payload:
+        points = payload["polygon_points"] or []
+        orm.polygon_points = json.dumps([p.model_dump() if hasattr(p, "model_dump") else p for p in points])
+
+    await db.commit()
+    await db.refresh(orm)
+
+    points = json.loads(orm.polygon_points) if isinstance(orm.polygon_points, str) else orm.polygon_points
+    return ZoneOut(
+        id=cast(int, orm.id),
+        name=cast(str, orm.name),
+        zone_type=cast(str, orm.zone_type),
+        camera_id=cast(Optional[str], orm.camera_id),
+        polygon_points=[ZonePoint(**p) for p in points],
+    )
 
 
 @app.delete("/api/zones/{zone_id}", status_code=204)
 async def delete_zone(zone_id: int, db=Depends(get_db)):
     from sqlalchemy import delete as sql_delete
+    await db.execute(sql_delete(ConstructionZoneORM).where(ConstructionZoneORM.id == zone_id))
     await db.execute(sql_delete(RestrictedZoneORM).where(RestrictedZoneORM.id == zone_id))
     await db.commit()
 
@@ -377,6 +653,18 @@ async def upload_floorplan(file: UploadFile = File(...)):
         f.write(content)
         
     return {"message": "Plano subido correctamente", "path": "/static/custom_floor_plan.png"}
+
+
+@app.get("/api/videos")
+async def list_videos():
+    """Lista los ficheros disponibles en la carpeta `videos/` para el frontend."""
+    files = []
+    if os.path.exists(VIDEOS_DIR):
+        for fname in sorted(os.listdir(VIDEOS_DIR)):
+            path = os.path.join(VIDEOS_DIR, fname)
+            if os.path.isfile(path):
+                files.append({"name": fname, "url": f"/videos/{fname}"})
+    return files
 
 
 # ---------------------------------------------------------------------------

@@ -32,17 +32,22 @@ const CHANNELS = [
   { id: 'whatsapp', label: 'WhatsApp', hint: 'Simulado para demo' },
 ]
 
+const APP_HOST = typeof window !== 'undefined' ? window.location.hostname : '127.0.0.1'
+
+const ZONE_TYPES = ['Central', 'Perímetro', 'Operativa', 'Restringida', 'Acceso', 'Logística']
+
 const DEFAULT_CAMERAS = [
   { id: 'CAM-01', name: 'Entrada principal', description: 'Acceso principal a obra', source: 'rtsp://10.0.1.21/live', zone: 'Acceso Norte', status: 'online', active: true, enabled: true },
   { id: 'CAM-02', name: 'Zona de carga', description: 'Recepción de materiales', source: 'rtsp://10.0.1.22/live', zone: 'Carga y descarga', status: 'online', active: true, enabled: true },
-  { id: 'CAM-03', name: 'Planta alta', description: 'Control de circulación interior', source: 'http://localhost:8000/videos/Create_a_realistic_safety_moni.mp4', zone: 'Planta Alta', status: 'online', active: true, enabled: true },
+  { id: 'CAM-03', name: 'Planta alta', description: 'Control de circulación interior', source: `http://${APP_HOST}:8000/videos/Create_a_realistic_safety_moni.mp4`, zone: 'Planta Alta', status: 'online', active: true, enabled: true },
   { id: 'CAM-04', name: 'Sótano', description: 'Zona de servicios', source: 'rtsp://10.0.1.24/live', zone: 'Sótano', status: 'offline', active: false, enabled: false },
 ]
 
 const DEFAULT_ZONES = [
-  { id: 'z1', name: 'Acceso Norte', type: 'Perímetro', severity: 'Alta', schedule: '24/7', camera: 'CAM-01', critical: true, active: true },
-  { id: 'z2', name: 'Zona de carga', type: 'Operativa', severity: 'Media', schedule: '06:00 - 20:00', camera: 'CAM-02', critical: false, active: true },
-  { id: 'z3', name: 'Sótano', type: 'Restringida', severity: 'Alta', schedule: '24/7', camera: 'CAM-04', critical: true, active: true },
+  { id: 'z1', name: 'Zona central', type: 'Central', severity: 'Media', schedule: '24/7', camera: 'CAM-01', critical: false, active: true },
+  { id: 'z2', name: 'Acceso Norte', type: 'Perímetro', severity: 'Alta', schedule: '24/7', camera: 'CAM-01', critical: true, active: true },
+  { id: 'z3', name: 'Zona de carga', type: 'Operativa', severity: 'Media', schedule: '06:00 - 20:00', camera: 'CAM-02', critical: false, active: true },
+  { id: 'z4', name: 'Sótano', type: 'Restringida', severity: 'Alta', schedule: '24/7', camera: 'CAM-04', critical: true, active: true },
 ]
 
 const DEFAULT_USERS = [
@@ -70,10 +75,10 @@ function initialState(cameras = [], zones = []) {
   const zoneList = (zones.length ? zones : DEFAULT_ZONES).map((zone, index) => ({
     id: zone.id || `zone-${index + 1}`,
     name: zone.name || zone.title || `Zona ${index + 1}`,
-    type: zone.type || 'Perímetro',
+    type: zone.zone_type || zone.type || 'Central',
     severity: zone.severity || 'Media',
     schedule: zone.schedule || '24/7',
-    camera: zone.camera || cameraList[index % cameraList.length]?.id || 'CAM-01',
+    camera: zone.camera_id || zone.camera || cameraList[index % cameraList.length]?.id || 'CAM-01',
     critical: Boolean(zone.critical ?? zone.isCritical ?? index === 0),
     active: zone.active ?? true,
   }))
@@ -454,11 +459,8 @@ export default function SettingsConsole({ cameras = [], zones = [], onNotify }) 
               </div>
               <input className="setting-input setting-input--compact" value={camera.source} onChange={(e) => updateCamera(camera.id, 'source', e.target.value)} />
               <select className="setting-select setting-select--compact" value={camera.zone} onChange={(e) => updateCamera(camera.id, 'zone', e.target.value)}>
-                <option>Acceso Norte</option>
-                <option>Zona de carga</option>
-                <option>Planta Alta</option>
-                <option>Sótano</option>
-                <option>Pendiente</option>
+                {draft.zones.map(zone => <option key={zone.id} value={zone.name}>{zone.name} · {zone.type}</option>)}
+                <option value="Pendiente">Pendiente</option>
               </select>
               <select className="setting-select setting-select--compact" value={camera.status} onChange={(e) => updateCamera(camera.id, 'status', e.target.value)}>
                 <option value="online">Online</option>
@@ -473,8 +475,8 @@ export default function SettingsConsole({ cameras = [], zones = [], onNotify }) 
     ),
     zones: (
       <SectionCard
-        title="Zonas restringidas"
-        description="Crea zonas críticas, define severidad y vincula cámaras para control de perímetro."
+        title="Zonas de obra"
+        description="Crea zonas centrales, operativas o restringidas, define severidad y vincula cámaras para control del plano."
         actions={(
           <div className="settings-card__actions-inline">
             <input className="setting-input setting-input--inline" placeholder="Nombre nueva zona" value={newZoneName} onChange={(e) => setNewZoneName(e.target.value)} />
@@ -490,10 +492,7 @@ export default function SettingsConsole({ cameras = [], zones = [], onNotify }) 
             <div className="settings-table__row settings-table__row--zones" key={zone.id}>
               <input className="setting-input setting-input--compact" value={zone.name} onChange={(e) => updateZone(zone.id, 'name', e.target.value)} />
               <select className="setting-select setting-select--compact" value={zone.type} onChange={(e) => updateZone(zone.id, 'type', e.target.value)}>
-                <option>Perímetro</option>
-                <option>Operativa</option>
-                <option>Restringida</option>
-                <option>Acceso</option>
+                {ZONE_TYPES.map(type => <option key={type}>{type}</option>)}
               </select>
               <select className="setting-select setting-select--compact" value={zone.severity} onChange={(e) => updateZone(zone.id, 'severity', e.target.value)}>
                 <option>Alta</option>

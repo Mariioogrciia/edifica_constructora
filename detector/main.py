@@ -38,7 +38,7 @@ from logic.rules import (
 # ---------------------------------------------------------------------------
 
 DEFAULT_MODEL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models", "best.pt")
-BACKEND_URL = "http://localhost:8000"
+BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 CAMERA_ID = "CAM-01"
 CONFIDENCE_THRESHOLD = 0.25
 DISPLAY_WINDOW = True  # Mostrar ventana de OpenCV durante la demo
@@ -231,6 +231,8 @@ def main():
         for person in person_boxes:
             center = bbox_center_normalized(person["bbox"], frame_w, frame_h)
             for zone in zones:
+                if str(zone.get("zone_type", "Restringida")).lower() != "restringida":
+                    continue
                 polygon = zone.get("polygon_points", [])
                 if polygon and point_in_polygon(center, polygon):
                     track_id = person.get("track_id", 0)
