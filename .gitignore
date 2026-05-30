@@ -3,19 +3,39 @@
 venv/
 env/
 ENV/
+.env
+.env.*
 
 # Python Cache & Compiled files
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Databases
-# *.db (Permitido por petición)
-# *.sqlite3 (Permitido por petición)
+# *.db (Permitido por peticion)
+# *.sqlite3 (Permitido por peticion)
 
-# Model weights (too large for GitHub)
-*.pt
-*.onnx
+# AI model weights
+# Los pesos .pt del proyecto se versionan porque forman parte de la demo.
+!*.pt
+!models/
+!models/**/*.pt
+
+# Runtime/generated media
+backend/static/snapshots/
+!backend/static/snapshots/.gitkeep
+*.avi
+*.mov
+*.mkv
+
+# Exported reports
+*.csv
+*.html
+!frontend/index.html
+!frontend/dist/index.html
 
 # Kaggle dataset
 archive/
@@ -26,6 +46,9 @@ resultados_test/
 
 # Node.js
 node_modules/
+frontend/node_modules/
+frontend/.vite/
+frontend/dist/assets/
 
 # OS generated files
 .DS_Store

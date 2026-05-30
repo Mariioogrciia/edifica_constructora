@@ -19,7 +19,7 @@
 
 ## 🧠 Modelo YOLO – Clases del Entrenamiento
 
-El modelo `models/best.pt` fue entrenado con el dataset **Construction Site Safety** (Roboflow) y detecta **10 clases**:
+El modelo `models/edifica_detector.pt` fue entrenado con el dataset **Construction Site Safety** (Roboflow) y detecta **10 clases**:
 
 | Índice | Clase | Categoría |
 |--------|-------|-----------|

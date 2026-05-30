@@ -55,6 +55,7 @@ class AlertBuffer:
         self.cooldown = cooldown
         self.frame_timeout = frame_timeout  # Si pasa más de esto sin ver la infracción, se resetea
         self._states: dict[tuple[str, int], InfractionState] = {}
+        self._sent_keys: set[tuple[str, int]] = set()
 
     def _get_threshold(self, alert_type: str) -> float:
         if alert_type == "RESTRICTED_ZONE":
@@ -70,6 +71,8 @@ class AlertBuffer:
         """
         now = custom_now if custom_now is not None else time.time()
         key = (alert_type, track_id)
+        if key in self._sent_keys:
+            return False
         state = self._states.get(key)
 
         if state is None or (now - state.last_seen) > self.frame_timeout:
@@ -87,6 +90,7 @@ class AlertBuffer:
                 return False
             state.alerted = True
             state.last_alert_time = now
+            self._sent_keys.add(key)
             return True
 
         return False

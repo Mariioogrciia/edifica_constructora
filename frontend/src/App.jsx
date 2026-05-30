@@ -54,6 +54,36 @@ const CAMERA_SECTORS = {
   'CAM-06': 'Exterior', 'CAM-07': 'Andamios',
 }
 
+const RECORDING_CAMERA_LABELS = {
+  'CAM-01': 'Zona de Riesgo: Maquinaria Pesada',
+  'CAM-02': 'Area de Acopio: Zona Sur',
+  'CAM-03': 'Zona de Operaciones Logisticas',
+  'CAM-04': 'Zona de Transito Lateral',
+  'CAM-05': 'Area de Acopio: Zona Norte',
+  'CAM-06': 'Perimetro Exterior',
+  'CAM-07': 'Punto de Control de Acceso (PCA)',
+}
+
+const RECORDING_ZONE_LABELS = {
+  'CAM-01': 'Zona de Riesgo: Maquinaria Pesada',
+  'CAM-02': 'Area de Acopio: Zona Sur',
+  'CAM-03': 'Zona de Operaciones Logisticas',
+  'CAM-04': 'Zona de Transito Lateral',
+  'CAM-05': 'Area de Acopio: Zona Norte',
+  'CAM-06': 'Perimetro Exterior',
+  'CAM-07': 'Punto de Control de Acceso (PCA)',
+}
+
+const RECORDING_ZONE_DESCRIPTIONS = {
+  'CAM-01': 'Monitorizacion de atropellos y EPI obligatorio.',
+  'CAM-02': 'Control de carga, descarga y delimitacion de perimetro.',
+  'CAM-03': 'Control de flujo de materiales y personal en movimiento.',
+  'CAM-04': 'Monitorizacion de rutas de evacuacion y pasillos seguros.',
+  'CAM-05': 'Control de almacenamiento vertical y materiales peligrosos.',
+  'CAM-06': 'Control de acceso no autorizado y seguridad externa.',
+  'CAM-07': 'Registro de entrada/salida y verificacion de EPI en acceso.',
+}
+
 function formatTime(iso) {
   const date = parseAlertDate(iso)
   if (Number.isNaN(date.getTime())) return '--:--'
@@ -91,13 +121,13 @@ function timeAgo(iso, nowMs = Date.now()) {
 
 function createDefaultCameras(hostname = window.location.hostname) {
   return [
-    { id: 'CAM-01', name: 'Entrada Principal', status: 'online', zone: 'Acceso Norte', videoUrl: `http://${hostname}:8000/videos/Realistic_full_body_safety_mon (1).mp4`, x: 0.5, y: 0.8 },
-    { id: 'CAM-02', name: 'Zona de Carga', status: 'online', zone: 'Zona de Carga', videoUrl: `http://${hostname}:8000/videos/mp_.mp4`, x: 0.15, y: 0.15 },
-    { id: 'CAM-03', name: 'Planta Alta', status: 'online', zone: 'Planta Alta', videoUrl: `http://${hostname}:8000/videos/Create_a_realistic_safety_moni.mp4`, x: 0.15, y: 0.75 },
-    { id: 'CAM-04', name: 'Sótano', status: 'online', zone: 'Sótano', videoUrl: `http://${hostname}:8000/videos/Workers_relocating_materials_con…_202605281140.mp4`, x: 0.85, y: 0.85 },
-    { id: 'CAM-05', name: 'Acopio Materiales', status: 'online', zone: 'Acopio Materiales', videoUrl: `http://${hostname}:8000/videos/Worker_violates_safety_protocols_202605281155.mp4`, x: 0.85, y: 0.15 },
-    { id: 'CAM-06', name: 'Exterior', status: 'offline', zone: 'Exterior', x: 0.5, y: 0.2 },
-    { id: 'CAM-07', name: 'Andamios', status: 'online', zone: 'Andamios', videoUrl: `http://${hostname}:8000/videos/CCTV_footage_construction_site_c…_202605281346.mp4`, x: 0.5, y: 0.5 },
+    { id: 'CAM-01', name: 'Entrada Principal', status: 'online', zone: 'Acceso principal', videoUrl: `http://${hostname}:8000/videos/Realistic_full_body_safety_mon (1).mp4`, x: 0.5, y: 0.8 },
+    { id: 'CAM-02', name: 'Zona de Carga', status: 'online', zone: 'Carga y descarga', videoUrl: `http://${hostname}:8000/videos/mp_.mp4`, x: 0.15, y: 0.15 },
+    { id: 'CAM-03', name: 'Planta Alta', status: 'online', zone: 'Planta alta', videoUrl: `http://${hostname}:8000/videos/Create_a_realistic_safety_moni.mp4`, x: 0.15, y: 0.75 },
+    { id: 'CAM-04', name: 'Sótano', status: 'online', zone: 'Sotano tecnico', videoUrl: `http://${hostname}:8000/videos/Workers_relocating_materials_con…_202605281140.mp4`, x: 0.85, y: 0.85 },
+    { id: 'CAM-05', name: 'Acopio Materiales', status: 'online', zone: 'Acopio de materiales', videoUrl: `http://${hostname}:8000/videos/Worker_violates_safety_protocols_202605281155.mp4`, x: 0.85, y: 0.15 },
+    { id: 'CAM-06', name: 'Exterior', status: 'offline', zone: 'Acopio de materiales', x: 0.5, y: 0.2 },
+    { id: 'CAM-07', name: 'Andamios', status: 'online', zone: 'Acceso principal', videoUrl: `http://${hostname}:8000/videos/CCTV_footage_construction_site_c…_202605281346.mp4`, x: 0.5, y: 0.5 },
   ]
 }
 
@@ -231,6 +261,26 @@ export default function App() {
   const [empForm, setEmpForm] = useState({ code: '', name: '', role: 'Operario' })
   const [empError, setEmpError] = useState('')
   const [cameras, setCameras] = useState(() => loadStoredCameras())
+  const [videoFiles, setVideoFiles] = useState([])
+  const [selectedRecording, setSelectedRecording] = useState(null)
+  const [recordingReport, setRecordingReport] = useState(null)
+  const [recordingReportLoading, setRecordingReportLoading] = useState(false)
+  const [recordingReportError, setRecordingReportError] = useState('')
+  const [analysisCurrentTime, setAnalysisCurrentTime] = useState(0)
+  const [analysisReports, setAnalysisReports] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem('edifica-analysis-reports')
+      const parsed = saved ? JSON.parse(saved) : []
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  })
+  const [selectedReportId, setSelectedReportId] = useState(null)
+  const [reportEvidenceFilter, setReportEvidenceFilter] = useState('all')
+  const [reportClassFilter, setReportClassFilter] = useState('all')
+  const [reportSearch, setReportSearch] = useState('')
+  const [reportOnlyRisks, setReportOnlyRisks] = useState(false)
 
   const fetchCameras = useCallback(async () => {
     try {
@@ -263,7 +313,7 @@ export default function App() {
             }
           })
 
-          // Si la API no devuelve cámaras o ninguna tiene `videoUrl`, usar los vídeos locales como fallback
+          // Si la API no devuelve grabaciones o ninguna tiene `videoUrl`, usar los vídeos locales como fallback
           const hasAnyVideo = merged.some(c => !!c.videoUrl)
           if (!merged.length || !hasAnyVideo) {
             try {
@@ -301,6 +351,15 @@ export default function App() {
     }
   }, [])
 
+  const fetchVideos = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/videos`)
+      if (res.ok) setVideoFiles(await res.json())
+    } catch (e) {
+      console.warn('Error fetching video files from API', e)
+    }
+  }, [])
+
   const pushToast = useCallback((toast) => {
     const id = toast.id || `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
     setToasts(prev => [...prev.slice(-4), { ...toast, id }])
@@ -317,7 +376,7 @@ export default function App() {
       setStats(prev => ({ ...prev, total, pending, resolved }))
     } catch (e) {
       // no bloquear la app si hay algún dato inesperado
-      console.warn('Error sincronizando contadores de incidencias', e)
+      console.warn('Error sincronizando contadores de alertas', e)
     }
   }, [alerts])
   // ── Fetchers ──
@@ -348,7 +407,7 @@ export default function App() {
       setSelectedIncidents(new Set())
       fetchAlerts()
       fetchStats()
-      pushToast({ title: 'Resueltas', desc: `${selectedIncidents.size} incidencias marcadas como resueltas.`, type: 'success' })
+      pushToast({ title: 'Resueltas', desc: `${selectedIncidents.size} alertas marcadas como resueltas.`, type: 'success' })
     } catch {}
   }, [selectedIncidents, fetchAlerts, fetchStats, pushToast])
   const toggleIncidentSelection = useCallback((id) => {
@@ -363,9 +422,17 @@ export default function App() {
   const startCameraAnalysis = useCallback(async (cameraId, videoUrl) => {
     if (!cameraId || !videoUrl) return
     try {
-      await fetch(`${API_BASE}/analyze/start?camera_id=${encodeURIComponent(cameraId)}&video_url=${encodeURIComponent(videoUrl)}`, { method: 'POST' })
-    } catch {}
-  }, [])
+      const res = await fetch(`${API_BASE}/analyze/start?camera_id=${encodeURIComponent(cameraId)}&video_url=${encodeURIComponent(videoUrl)}`, { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        pushToast({ title: 'Analisis no iniciado', desc: data.detail || 'No se pudo abrir la fuente de video.', type: 'error' })
+        return
+      }
+      pushToast({ title: 'Analisis iniciado', desc: `${cameraId} enviando frames al detector.`, type: 'success' })
+    } catch {
+      pushToast({ title: 'Sin conexion', desc: 'No se pudo contactar con el backend de analisis.', type: 'error' })
+    }
+  }, [pushToast])
 
   const stopCameraAnalysis = useCallback(async (cameraId) => {
     if (!cameraId) return
@@ -373,27 +440,6 @@ export default function App() {
       await fetch(`${API_BASE}/analyze/stop?camera_id=${encodeURIComponent(cameraId)}`, { method: 'POST' })
     } catch {}
   }, [])
-
-  const handleVideoPlay = useCallback((cameraId, videoUrl) => (e) => {
-    const videoEl = e.target
-    videoEl.dataset.started = 'true'
-    startCameraAnalysis(cameraId, videoUrl)
-  }, [startCameraAnalysis])
-
-  const handleVideoPause = useCallback((cameraId) => (e) => {
-    const videoEl = e.target
-    setTimeout(() => {
-      if (videoEl.paused) {
-        videoEl.dataset.started = 'false'
-        stopCameraAnalysis(cameraId)
-      }
-    }, 400)
-  }, [stopCameraAnalysis])
-
-  const handleVideoEnded = useCallback((cameraId) => (e) => {
-    e.target.dataset.started = 'false'
-    stopCameraAnalysis(cameraId)
-  }, [stopCameraAnalysis])
 
   const createEmployee = useCallback(async (e) => { e.preventDefault(); setEmpError(''); if (!empForm.code.trim()||!empForm.name.trim()) { setEmpError('Campos obligatorios.'); return } try { const r = await fetch(`${API_BASE}/employees`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(empForm) }); if (r.ok) { setEmpForm({code:'',name:'',role:'Operario'}); fetchEmployees(); fetchStats() } else { const d=await r.json(); setEmpError(d.detail||'Error') } } catch { setEmpError('Sin conexión.') } }, [empForm, fetchEmployees, fetchStats])
   const deleteEmployee = useCallback(async (id) => { try { await fetch(`${API_BASE}/employees/${id}`, {method:'DELETE'}); fetchEmployees(); fetchStats() } catch {} }, [fetchEmployees, fetchStats])
@@ -408,9 +454,14 @@ export default function App() {
     ws.onerror = () => { ws.close() }
   }, [fetchAlerts, fetchStats, pushToast])
 
-  useEffect(() => { fetchAlerts(); fetchStats(); fetchZones(); fetchCameras(); fetchEmployees(); connectWs(); const i=setInterval(()=>{fetchAlerts();fetchStats()},15000); return ()=>{clearInterval(i);clearTimeout(reconnectTimer.current);wsRef.current?.close()} }, []) // eslint-disable-line
+  useEffect(() => { fetchAlerts(); fetchStats(); fetchZones(); fetchCameras(); fetchVideos(); fetchEmployees(); connectWs(); const i=setInterval(()=>{fetchAlerts();fetchStats()},15000); return ()=>{clearInterval(i);clearTimeout(reconnectTimer.current);wsRef.current?.close()} }, []) // eslint-disable-line
   useEffect(() => { fetchAlerts() }, [fetchAlerts])
   useEffect(() => { if (!toasts.length) return; const t=setTimeout(()=>setToasts(p=>p.slice(1)),5500); return ()=>clearTimeout(t) }, [toasts])
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('edifica-analysis-reports', JSON.stringify(analysisReports.slice(0, 30)))
+    } catch {}
+  }, [analysisReports])
   useEffect(() => {
     const timer = setInterval(() => setClockNow(Date.now()), 15000)
     return () => clearInterval(timer)
@@ -444,7 +495,204 @@ export default function App() {
   const [featuredCamId, setFeaturedCamId] = useState(() => loadStoredCameras()[0]?.id || 'CAM-01')
   const featuredCam = cameras.find(c => c.id === featuredCamId) || cameras[0]
   const secondaryCams = cameras.filter(c => c.id !== featuredCamId)
-  const cameraZoneLabel = (cameraId) => getCameraZone(cameraId, cameras)
+  const batchCams = videoFiles.length
+    ? videoFiles.map((file, index) => {
+        const url = resolveVideoUrl(file.url)
+        const linkedCamera = cameras.find(camera => camera.videoUrl && decodeURIComponent(String(camera.videoUrl).split('/').pop() || '') === file.name)
+          || cameras[index % Math.max(cameras.length, 1)]
+        const id = linkedCamera?.id || `CAM-${String(index + 1).padStart(2, '0')}`
+        return {
+          id,
+          name: RECORDING_CAMERA_LABELS[id] || linkedCamera?.name || `Grabacion ${index + 1}`,
+          cameraLabel: RECORDING_CAMERA_LABELS[id] || linkedCamera?.name || id,
+          zone: RECORDING_ZONE_LABELS[id] || linkedCamera?.zone || 'Pendiente',
+          description: RECORDING_ZONE_DESCRIPTIONS[id] || '',
+          status: 'online',
+          videoUrl: url,
+          fileName: file.name,
+        }
+      })
+    : cameras.filter(c => c.videoUrl).map(camera => ({
+        ...camera,
+        name: RECORDING_CAMERA_LABELS[camera.id] || camera.name,
+        cameraLabel: RECORDING_CAMERA_LABELS[camera.id] || camera.name || camera.id,
+        zone: RECORDING_ZONE_LABELS[camera.id] || camera.zone || 'Pendiente',
+        description: RECORDING_ZONE_DESCRIPTIONS[camera.id] || '',
+      }))
+  const beginRecordingAnalysis = useCallback(async (recording) => {
+    if (!recording?.videoUrl) return
+    setSelectedRecording(recording)
+    setRecordingReport(null)
+    setRecordingReportError('')
+    setAnalysisCurrentTime(0)
+    setRecordingReportLoading(true)
+    setCurrentView('analysis')
+
+    try {
+      const params = new URLSearchParams({
+        camera_id: recording.id,
+        video_url: recording.videoUrl,
+        confidence: '0.25',
+        frame_stride: '12',
+        bucket_seconds: '5',
+      })
+      const res = await fetch(`${API_BASE}/analyze/report?${params.toString()}`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data.detail || 'No se pudo analizar la grabacion.')
+      }
+      setRecordingReport(data)
+      const savedReport = {
+        id: `${Date.now()}-${recording.id}`,
+        created_at: new Date().toISOString(),
+        recording: {
+          id: recording.id,
+          name: recording.name,
+          zone: recording.zone,
+          fileName: recording.fileName || decodeURIComponent(String(recording.videoUrl || '').split('/').pop() || 'archivo.mp4'),
+          videoUrl: recording.videoUrl,
+        },
+        report: data,
+      }
+      setAnalysisReports(prev => [savedReport, ...prev.filter(item => item.recording?.videoUrl !== recording.videoUrl)].slice(0, 30))
+      setSelectedReportId(savedReport.id)
+      fetchAlerts()
+      fetchStats()
+      pushToast({ title: 'Reporte generado', desc: `${recording.id} analizada correctamente.`, type: 'success' })
+    } catch (e) {
+      setRecordingReportError(e.message || 'No se pudo analizar la grabacion.')
+      pushToast({ title: 'Analisis fallido', desc: e.message || 'No se pudo generar el reporte.', type: 'error' })
+    } finally {
+      setRecordingReportLoading(false)
+    }
+  }, [fetchAlerts, fetchStats, pushToast])
+  const activeAnalysisDetections = (recordingReport?.observations || [])
+    .filter(det => Math.abs((det.time_sec || 0) - analysisCurrentTime) <= 0.35)
+    .slice(0, 18)
+  const liveInfractionCount = (recordingReport?.observations || []).filter(det =>
+    (det.time_sec || 0) <= analysisCurrentTime && String(det.class_name || '').startsWith('NO-')
+  ).length
+  const selectedSavedReport = analysisReports.find(report => report.id === selectedReportId) || analysisReports[0] || null
+  const selectedReportTimeline = selectedSavedReport?.report?.timeline || []
+  const selectedReportClassOptions = Array.from(new Set(selectedReportTimeline.map(event => event.class_name).filter(Boolean))).sort()
+  const filteredReportTimeline = selectedReportTimeline.filter(event => {
+    if (reportOnlyRisks && event.status !== 'risk') return false
+    if (reportEvidenceFilter !== 'all' && event.status !== reportEvidenceFilter) return false
+    if (reportClassFilter !== 'all' && event.class_name !== reportClassFilter) return false
+    const query = reportSearch.trim().toLowerCase()
+    if (query) {
+      const haystack = `${event.class_name || ''} ${event.label || ''} ${event.severity || ''} ${event.first_seen_label || ''} ${event.last_seen_label || ''}`.toLowerCase()
+      if (!haystack.includes(query)) return false
+    }
+    return true
+  })
+  const selectedReportSummary = selectedSavedReport?.report?.summary || {}
+  const complianceScore = selectedReportSummary.unique_findings
+    ? Math.max(0, Math.round(((selectedReportSummary.unique_findings - (selectedReportSummary.unique_risks || 0)) / selectedReportSummary.unique_findings) * 100))
+    : 100
+  const riskTimeline = selectedReportTimeline.filter(event => event.status === 'risk')
+  const reportFileBase = selectedSavedReport
+    ? `informe_${selectedSavedReport.recording?.id || 'grabacion'}_${String(selectedSavedReport.created_at || '').slice(0, 10)}`.replace(/[^a-zA-Z0-9_-]+/g, '_')
+    : 'informe_edifica'
+  const escapeHtml = (value = '') => String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
+  const downloadBlob = useCallback((content, filename, type) => {
+    const blob = new Blob([content], { type })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }, [])
+  const buildProfessionalReportHtml = useCallback((reportPack, evidence = []) => {
+    if (!reportPack) return ''
+    const report = reportPack.report || {}
+    const summary = report.summary || {}
+    const recording = reportPack.recording || {}
+    const score = summary.unique_findings ? Math.max(0, Math.round(((summary.unique_findings - (summary.unique_risks || 0)) / summary.unique_findings) * 100)) : 100
+    const rows = evidence.map(event => {
+      const image = event.snapshot_path ? `${window.location.origin}${event.snapshot_path}` : ''
+      return `<article class="evidence ${event.status === 'risk' ? 'risk' : ''}">
+        ${image ? `<img src="${image}" alt="Evidencia">` : '<div class="noimg">Sin captura</div>'}
+        <div><span>${escapeHtml(event.first_seen_label || '')}${event.last_seen_label && event.last_seen_label !== event.first_seen_label ? ` - ${escapeHtml(event.last_seen_label)}` : ''}</span>
+        <strong>${escapeHtml(event.label || event.class_name || '')}</strong>
+        <p>${escapeHtml(event.severity || '')} · ${event.confirmations || 0} confirmaciones · ${Math.round((event.max_confidence || 0) * 100)}%</p></div>
+      </article>`
+    }).join('')
+    return `<!doctype html><html><head><meta charset="utf-8"><title>Informe Edifica</title>
+      <style>
+        body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#f3f5f7;color:#111827}
+        .page{max-width:1120px;margin:0 auto;padding:34px}
+        .cover{background:#0b0f14;color:white;padding:34px;border-radius:18px}
+        .eyebrow{color:#c2a56c;font-size:12px;text-transform:uppercase;letter-spacing:.12em;font-weight:700}
+        h1{margin:8px 0 10px;font-size:34px}.cover p{color:#d4dae3;max-width:820px;line-height:1.55}
+        .meta,.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:18px}
+        .card{background:white;border:1px solid #d9dee6;border-radius:12px;padding:16px}.cover .card{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.14)}
+        .card span{display:block;color:#6b7280;font-size:12px;text-transform:uppercase;font-weight:700}.cover .card span{color:#aeb8c6}
+        .card strong{display:block;margin-top:8px;font-size:24px}.risk strong{color:#b45f5f}.ok strong{color:#3f8f6b}
+        h2{margin:28px 0 12px;font-size:20px}.summary{font-size:16px;line-height:1.6}
+        .evidence-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.evidence{background:white;border:1px solid #d9dee6;border-radius:12px;overflow:hidden}.evidence.risk{border-color:#dca2a2}
+        .evidence img,.noimg{width:100%;height:180px;object-fit:cover;background:#111827;color:#9ca3af;display:flex;align-items:center;justify-content:center}
+        .evidence div:not(.noimg){padding:13px}.evidence span{color:#8b6f35;font-size:12px;font-weight:700}.evidence strong{display:block;margin-top:5px}.evidence p{color:#6b7280;margin:6px 0 0;font-size:13px}
+        @media print{body{background:white}.page{padding:18px}.cover,.card,.evidence{break-inside:avoid}.evidence-grid{grid-template-columns:1fr 1fr}}
+      </style></head><body><main class="page">
+        <section class="cover"><div class="eyebrow">Edifica Constructora · Informe de Seguridad Laboral</div>
+        <h1>${escapeHtml(recording.name || 'Informe de grabacion')}</h1>
+        <p>${escapeHtml(summary.smart_summary || 'Analisis completado.')}</p>
+        <div class="meta">
+          <div class="card"><span>Camara</span><strong>${escapeHtml(recording.id || '')}</strong></div>
+          <div class="card"><span>Zona</span><strong>${escapeHtml(recording.zone || '')}</strong></div>
+          <div class="card"><span>Fecha</span><strong>${escapeHtml(formatDateTime(reportPack.created_at))}</strong></div>
+          <div class="card ok"><span>Cumplimiento</span><strong>${score}%</strong></div>
+        </div></section>
+        <section class="kpis">
+          <div class="card"><span>Duracion</span><strong>${escapeHtml(report.duration_label || '--:--')}</strong></div>
+          <div class="card risk"><span>Riesgos unicos</span><strong>${summary.unique_risks || 0}</strong></div>
+          <div class="card"><span>Hallazgos</span><strong>${summary.unique_findings || 0}</strong></div>
+          <div class="card"><span>Detecciones</span><strong>${summary.detections || 0}</strong></div>
+        </section>
+        <h2>Resumen ejecutivo</h2><p class="summary">${escapeHtml(summary.smart_summary || 'No hay resumen disponible.')}</p>
+        <h2>Evidencias</h2><section class="evidence-grid">${rows || '<div class="card">Sin evidencias para los filtros actuales.</div>'}</section>
+      </main></body></html>`
+  }, [])
+  const exportSelectedReportHtml = useCallback(() => {
+    if (!selectedSavedReport) return
+    downloadBlob(buildProfessionalReportHtml(selectedSavedReport, filteredReportTimeline), `${reportFileBase}.html`, 'text/html;charset=utf-8')
+  }, [buildProfessionalReportHtml, downloadBlob, filteredReportTimeline, reportFileBase, selectedSavedReport])
+  const exportSelectedReportCsv = useCallback(() => {
+    if (!selectedSavedReport) return
+    const header = ['camara', 'zona', 'inicio', 'fin', 'clase', 'resultado', 'severidad', 'confirmaciones', 'confianza', 'captura']
+    const lines = filteredReportTimeline.map(event => [
+      selectedSavedReport.recording?.id || '',
+      selectedSavedReport.recording?.zone || '',
+      event.first_seen_label || '',
+      event.last_seen_label || '',
+      event.class_name || '',
+      event.label || '',
+      event.severity || '',
+      event.confirmations || 0,
+      Math.round((event.max_confidence || 0) * 100),
+      event.snapshot_path || '',
+    ].map(value => `"${String(value).replaceAll('"', '""')}"`).join(','))
+    downloadBlob([header.join(','), ...lines].join('\n'), `${reportFileBase}_evidencias.csv`, 'text/csv;charset=utf-8')
+  }, [downloadBlob, filteredReportTimeline, reportFileBase, selectedSavedReport])
+  const printSelectedReport = useCallback(() => {
+    if (!selectedSavedReport) return
+    const popup = window.open('', '_blank')
+    if (!popup) return
+    popup.document.write(buildProfessionalReportHtml(selectedSavedReport, filteredReportTimeline))
+    popup.document.close()
+    popup.focus()
+    setTimeout(() => popup.print(), 250)
+  }, [buildProfessionalReportHtml, filteredReportTimeline, selectedSavedReport])
+  const cameraZoneLabel = (cameraId) => RECORDING_ZONE_LABELS[cameraId] || getCameraZone(cameraId, cameras)
   const handleCamerasChange = useCallback((updatedCameras) => {
     const bindingsCameras = applyCameraZoneBindings(updatedCameras, zones)
     setCameras(bindingsCameras)
@@ -510,20 +758,19 @@ export default function App() {
 
   // ── Sidebar nav items ──
   const navItems = [
-    { id: 'cameras', icon: I.camera, label: 'Cámaras' },
+    { id: 'cameras', icon: I.camera, label: 'Grabaciones' },
     { id: 'dashboard', icon: I.grid, label: 'Dashboard' },
-    { id: 'incidents', icon: I.bell, label: 'Incidencias' },
     { id: 'reports', icon: I.report, label: 'Reportes' },
-    { id: 'settings', icon: I.settings, label: 'Configuración' },
+    { id: 'settings', icon: I.settings, label: 'Configuracion' },
   ]
 
   // ── Page title per view ──
   const viewTitles = {
-    cameras: 'Centro de control de cámaras',
+    cameras: 'Grabaciones de camaras',
+    analysis: 'Analisis de grabacion',
     dashboard: 'Dashboard de Seguridad Laboral',
-    incidents: 'Incidencias activas',
     reports: 'Reportes',
-    settings: 'Configuración',
+    settings: 'Configuracion',
   }
 
   return (
@@ -546,7 +793,7 @@ export default function App() {
         <div className="sidebar-user">
           <div className="sidebar-avatar">AD</div>
           <div className="sidebar-user-name">Admin<br/>Seguridad</div>
-          <div className="sidebar-user-status">En línea</div>
+          <div className="sidebar-user-status">Archivos disponibles</div>
         </div>
       </aside>
 
@@ -557,233 +804,202 @@ export default function App() {
           <div className="top-bar__brand">
             <div className="top-bar__title">{viewTitles[currentView] || 'Edifica Constructora'}</div>
             <div className="top-bar__meta">
-              Monitoreo en tiempo real de obra
+              Analisis de grabaciones de obra
               <span style={{ margin: '0 4px' }}>·</span>
               <span className="top-bar__meta-dot"></span>
               Sistema operativo
             </div>
           </div>
-
-          {currentView === 'cameras' && (
-            <div className="top-bar__filters">
-              <div className="top-bar__filter">
-                <span className="top-bar__filter-label">Proyecto</span>
-                <select className="top-bar__filter-select">
-                  <option>Edifica Constructora</option>
-                </select>
-              </div>
-              <div className="top-bar__filter">
-                <span className="top-bar__filter-label">Sede / Obra</span>
-                <select className="top-bar__filter-select">
-                  <option>Torre Norte</option>
-                </select>
-              </div>
-              <div className="top-bar__filter">
-                <span className="top-bar__filter-label">Nivel / Zona</span>
-                <select className="top-bar__filter-select">
-                  <option>Todas las zonas</option>
-                </select>
-              </div>
-            </div>
-          )}
-
-          {currentView !== 'incidents' && (
-            <>
-              <div className="top-bar__search">
-                {I.search}
-                <input type="text" placeholder="Buscar cámaras..." />
-              </div>
-              <button className="top-bar__action">Salir de zona</button>
-            </>
-          )}
         </div>
 
-        {/* ── Page Content ── */}
         <div className={`page-content ${currentView === 'zones' ? 'page-content--zones' : ''}`}>
-
-          {/* ════════ CAMERAS VIEW ════════ */}
+          {/* RECORDINGS VIEW */}
           {currentView === 'cameras' && (
-            <div className="cameras-layout">
-              {/* ── COL 1: Featured Camera & Stats ── */}
-              <div className="cameras-col-1">
-                <div className="cam-card panel--hero">
-                  <div className="cam-card__header">
-                    <div>
-                      <div className="cam-card__label">Cámara destacada</div>
-                      <div className="cam-card__name">{featuredCam.name} <span className="cam-card__name-id">({featuredCam.id})</span></div>
-                      <div className="cam-card__zone">Zona: {featuredCam.zone || 'Sin zona asignada'}</div>
-                    </div>
-                    <span className="cam-status cam-status--recording"><span className="cam-status__dot"></span> Grabando</span>
-                  </div>
-                  <div className="cam-feed cam-feed--featured">
-                    {featuredCam.videoUrl ? (
-                      <video
-                          src={featuredCam.videoUrl} controls loop muted playsInline
-                          onPlay={handleVideoPlay(featuredCam.id, featuredCam.videoUrl)}
-                          onPause={handleVideoPause(featuredCam.id)}
-                          onEnded={handleVideoEnded(featuredCam.id)}
-                        />
-                    ) : (
-                      <div className="cam-feed__placeholder">{I.wifi}<div className="cam-feed__placeholder-text">Stream local activo</div></div>
-                    )}
-                    <div className="cam-ts">{nowTime}</div>
-                  </div>
-                  {/* IA analytics removed */}
-                </div>
-
-                <div className="stats-overview">
-                  <div className="stats-overview__title">Vista general de cámaras</div>
-                  <div className="stats-overview__grid">
-                    <div className="stat-block">
-                      <div className="stat-block__label">Total cámaras</div>
-                      <div className="stat-block__row">
-                        <span className="stat-block__value">{cameras.length}</span>
-                        <span className="stat-block__icon" style={{fill:'var(--text-muted)'}}>{I.camera}</span>
-                      </div>
-                      <div className="stat-block__sub">Cámaras instaladas</div>
-                    </div>
-                    <div className="stat-block">
-                      <div className="stat-block__label">En línea</div>
-                      <div className="stat-block__row">
-                        <span className="stat-block__value">{cameras.filter(c=>c.status==='online').length}</span>
-                        <span className="stat-block__icon" style={{fill:'var(--color-emerald)'}}>{I.wifi}</span>
-                      </div>
-                      <div className="stat-block__sub">{cameras.length ? Math.round(cameras.filter(c=>c.status==='online').length/cameras.length*100) : 0}% del total</div>
-                    </div>
-                    <div className="stat-block">
-                      <div className="stat-block__label">Grabando</div>
-                      <div className="stat-block__row">
-                        <span className="stat-block__value">{cameras.filter(c=>c.status==='online'&&c.videoUrl).length}</span>
-                        <span className="stat-block__icon" style={{fill:'var(--color-blue)'}}>{I.camera}</span>
-                      </div>
-                      <div className="stat-block__sub">Cámaras activas</div>
-                    </div>
-                    <div className="stat-block stat-block--danger">
-                      <div className="stat-block__label">Sin señal</div>
-                      <div className="stat-block__row">
-                        <span className="stat-block__value">{cameras.filter(c=>c.status==='offline').length}</span>
-                        <span className="stat-block__icon" style={{fill:'var(--color-red)'}}>{I.noSignal}</span>
-                      </div>
-                      <div className="stat-block__sub">Requieren atención</div>
-                    </div>
+            <div className="recordings-page">
+              <div className="recordings-console">
+                <div className="recordings-console__header">
+                  <div>
+                    <div className="cam-card__label">Analisis batch</div>
+                    <h2 className="recordings-console__title">Sistema de grabaciones</h2>
+                    <p className="recordings-console__subtitle">Selecciona una grabacion, revisa su contexto y lanza deteccion EPI con el modelo local.</p>
                   </div>
                 </div>
               </div>
 
-              {/* ── COL 2: Secondary Cameras ── */}
-              <div className="cameras-col-2">
-                <div className="cam-secondary-grid">
-                  {secondaryCams.map(cam => (
-                    <div className="cam-card" key={cam.id} onClick={() => setFeaturedCamId(cam.id)} style={{cursor:'pointer'}}>
-                      <div className="cam-card__header">
-                        <div>
-                          <div className="cam-card__name">{cam.name} <span className="cam-card__name-id">({cam.id})</span></div>
-                          <div className="cam-card__zone">Zona: {cam.zone || 'Sin zona asignada'}</div>
-                        </div>
-                        <span className={`cam-status ${cam.status === 'online' ? 'cam-status--recording' : 'cam-status--nosignal'}`}>
-                          <span className="cam-status__dot"></span>
-                          {cam.status === 'online' ? 'Grabando' : 'Sin señal'}
+              <div className="recordings-history">
+                <div className="recordings-history__header">
+                  <span>#</span>
+                  <span>Grabacion</span>
+                  <span>Camara</span>
+                  <span>Zona</span>
+                  <span>Archivo</span>
+                  <span>Accion</span>
+                </div>
+                {batchCams.map((recording, index) => {
+                  const fileName = recording.fileName || decodeURIComponent(String(recording.videoUrl || '').split('/').pop() || 'archivo.mp4')
+                  return (
+                    <div className="recording-row" key={recording.id}>
+                      <div className="recording-row__index">{String(index + 1).padStart(2, '0')}</div>
+                      <button className="recording-row__preview" onClick={() => setFeaturedCamId(recording.id)}>
+                        <video src={recording.videoUrl} muted playsInline preload="metadata" />
+                        <span>
+                          <strong>{recording.name}</strong>
+                          {recording.description && <small>{recording.description}</small>}
                         </span>
-                      </div>
-                      <div className="cam-feed cam-feed--secondary">
-                        {cam.status === 'online' ? (
-                          cam.videoUrl ? (
-                            <video
-                              src={cam.videoUrl} muted playsInline loop
-                              onMouseEnter={(e) => e.target.play().catch(()=>{})}
-                              onMouseLeave={(e) => e.target.pause()}
-                            />
-                          ) : (
-                            <div className="cam-feed__placeholder">
-                              <svg style={{width:36,height:36,fill:'var(--text-muted)',opacity:0.3}} viewBox="0 0 24 24"><path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3c-1.65-1.66-4.34-1.66-6 0zm-4-4l2 2c2.76-2.76 7.24-2.76 10 0l2-2C15.14 9.14 8.87 9.14 5 13z"/></svg>
-                              <div className="cam-feed__placeholder-text">Stream local activo</div>
-                              <div className="cam-feed__placeholder-sub">(Conexión Edge-First Offline)</div>
-                            </div>
-                          )
-                        ) : (
-                          <div className="cam-feed__nosignal">
-                            {I.noSignal}
-                            <div className="cam-feed__nosignal-text">Sin señal de vídeo</div>
-                            <div className="cam-feed__nosignal-sub">Verificar conexión o alimentación</div>
-                          </div>
-                        )}
-                        <div className="cam-ts">{nowTime}</div>
-                        <div className="cam-controls">
-                          <button title="Captura">{I.snapshot}</button>
-                          <button title="Pantalla completa">{I.fullscreen}</button>
-                        </div>
+                      </button>
+                      <div className="recording-row__cell"><strong>{recording.id}</strong></div>
+                      <div className="recording-row__cell">{recording.zone || 'Sin zona'}</div>
+                      <div className="recording-row__file" title={fileName}>{fileName}</div>
+                      <div className="recording-row__actions">
+                        <button className="inc-action-btn" onClick={() => beginRecordingAnalysis(recording)}>Analizar</button>
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* ── COL 3: Right Panel (Activity, Incidents, Actions) ── */}
-              <div className="right-panel">
-                {/* Activity */}
-                <div className="panel panel--flex panel--compact">
-                  <div className="panel-header">
-                      <h3 className="panel-title">Actividad reciente</h3>
-                      <button className="panel-action" onClick={() => setCurrentView('incidents')}>Ver todo</button>
-                    </div>
-                  <div className="panel-body">
-                    {pendingAlerts.slice(0, 4).map(a => {
-                      const ti = TYPE_LABELS[a.type] || { desc: a.type }
-                      const iconColor = a.type === 'NO_HARDHAT' ? 'activity-icon--red' : a.type === 'NO_VEST' ? 'activity-icon--amber' : a.type === 'RESTRICTED_ZONE' ? 'activity-icon--red' : 'activity-icon--blue'
-                      return (
-                        <div className="activity-item" key={`act-${a.id}`}>
-                          <div className={`activity-icon ${iconColor}`}>{I.bell}</div>
-                          <div className="activity-info">
-                            <div className="activity-cam">{a.camera_id} ({cameraZoneLabel(a.camera_id)})</div>
-                            <div className="activity-desc">{ti.desc}</div>
-                          </div>
-                          <div className="activity-time">{timeAgo(a.timestamp, clockNow)}</div>
-                        </div>
-                      )
-                    })}
-                    {pendingAlerts.length === 0 && <div className="empty-state"><div className="empty-state__text">Sin actividad</div></div>}
-                  </div>
-                </div>
-
-                {/* Incidents */}
-                <div className="panel panel--flex panel--compact">
-                  <div className="panel-header">
-                    <h3 className="panel-title">Incidencias activas</h3>
-                    <button className="panel-action" onClick={() => setCurrentView('incidents')}>Ver todas</button>
-                  </div>
-                  <div className="panel-body" style={{ padding: '6px 0' }}>
-                    {pendingAlerts.slice(0, 3).map((a, i) => {
-                      const severities = ['alta', 'media', 'baja']
-                      const sev = severities[i] || 'media'
-                      const ti = TYPE_LABELS[a.type] || { desc: a.type }
-                      return (
-                        <div className={`incident-card incident-card--${sev}`} key={`inc-${a.id}`}>
-                          <div>
-                            <div className="incident-text">{ti.desc} ({a.camera_id})</div>
-                            <div className="incident-sub">{timeAgo(a.timestamp, clockNow)}</div>
-                          </div>
-                          <span className={`incident-severity incident-severity--${sev}`}>{sev.charAt(0).toUpperCase() + sev.slice(1)}</span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                {/* Quick Actions */}
-                <div className="actions-panel">
-                  <div className="actions-panel__title">Acciones rápidas</div>
-                  <div className="actions-grid">
-                    <button className="action-btn" onClick={() => pushToast({ title: 'Nueva cámara', desc: 'Funcionalidad de agregar cámaras próximamente.', type: 'info' })}>{I.add} Agregar cámara</button>
-                    <button className="action-btn" onClick={() => setCurrentView('reports')}>{I.download} Exportar reporte</button>
-                    <button className="action-btn" onClick={() => setCurrentView('zones')}>{I.map} Ver mapa de obra</button>
-                    <button className="action-btn" onClick={() => setCurrentView('settings')}>{I.settings} Configurar alertas</button>
-                  </div>
-                </div>
+                  )
+                })}
+                {batchCams.length === 0 && <div className="empty-state"><div className="empty-state__text">No hay grabaciones locales disponibles</div></div>}
               </div>
             </div>
           )}
 
-          {/* ════════ DASHBOARD VIEW ════════ */}
+          {/* RECORDING ANALYSIS VIEW */}
+          {currentView === 'analysis' && selectedRecording && (
+            <div className="analysis-page">
+              <div className="analysis-header">
+                <button className="inc-action-btn" onClick={() => setCurrentView('cameras')}>Volver</button>
+                <div>
+                  <div className="cam-card__label">Reporte de grabacion</div>
+                  <h2 className="analysis-title">{selectedRecording.name}</h2>
+                  <p className="analysis-subtitle">{selectedRecording.id} · {selectedRecording.zone || 'Sin zona'} · {selectedRecording.fileName || decodeURIComponent(String(selectedRecording.videoUrl || '').split('/').pop() || 'archivo.mp4')}</p>
+                </div>
+                <button className="inc-action-btn" onClick={() => beginRecordingAnalysis(selectedRecording)} disabled={recordingReportLoading}>
+                  {recordingReportLoading ? 'Analizando...' : 'Reanalizar'}
+                </button>
+              </div>
+
+              <div className="analysis-layout">
+                <div className="analysis-video-panel">
+                  <div className="analysis-video-wrap">
+                    <video
+                      src={selectedRecording.videoUrl}
+                      controls
+                      playsInline
+                      preload="metadata"
+                      onTimeUpdate={(e) => setAnalysisCurrentTime(e.currentTarget.currentTime)}
+                      onSeeked={(e) => setAnalysisCurrentTime(e.currentTarget.currentTime)}
+                    />
+                    <div className="analysis-overlay" aria-hidden="true">
+                      {activeAnalysisDetections.map((det, idx) => (
+                        <div
+                          className={`analysis-box analysis-box--${det.status === 'risk' ? 'risk' : 'ok'}`}
+                          key={`${det.time_sec}-${det.class_name}-${idx}`}
+                          style={{
+                            left: `${(det.bbox?.x || 0) * 100}%`,
+                            top: `${(det.bbox?.y || 0) * 100}%`,
+                            width: `${(det.bbox?.w || 0) * 100}%`,
+                            height: `${(det.bbox?.h || 0) * 100}%`,
+                          }}
+                        >
+                          <span>{det.class_name} {Math.round((det.confidence || 0) * 100)}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="analysis-counter">
+                    <span>Infracciones detectadas</span>
+                    <strong>{liveInfractionCount}</strong>
+                  </div>
+                </div>
+
+                <div className="analysis-summary">
+                  <div className="analysis-summary__item">
+                    <span>Duracion</span>
+                    <strong>{recordingReport?.duration_label || '--:--'}</strong>
+                  </div>
+                  <div className="analysis-summary__item analysis-summary__item--risk">
+                    <span>Riesgos unicos</span>
+                    <strong>{recordingReport?.summary?.unique_risks || 0}</strong>
+                  </div>
+                  <div className="analysis-summary__item analysis-summary__item--ok">
+                    <span>EPI correctos</span>
+                    <strong>{recordingReport?.summary?.unique_ok || 0}</strong>
+                  </div>
+                  <div className="analysis-summary__item">
+                    <span>Hallazgos</span>
+                    <strong>{recordingReport?.summary?.unique_findings || 0}</strong>
+                  </div>
+                </div>
+              </div>
+
+              {recordingReportLoading && (
+                <div className="analysis-loading">
+                  <div className="analysis-loading__bar"><span></span></div>
+                  <strong>Analizando frames con el modelo local...</strong>
+                  <p>Esto puede tardar unos segundos segun la duracion de la grabacion.</p>
+                </div>
+              )}
+
+              {recordingReportError && (
+                <div className="analysis-error">{recordingReportError}</div>
+              )}
+
+              {recordingReport && (
+                <>
+                <div className="smart-report-card">
+                  <div>
+                    <div className="cam-card__label">Smart Report</div>
+                    <strong>{recordingReport.summary?.smart_summary || 'Analisis completado.'}</strong>
+                    <p>El informe detallado queda guardado en Reportes con capturas, tiempos exactos y metricas de la sesion.</p>
+                  </div>
+                  <div className="smart-report-card__actions">
+                    <button className="inc-action-btn" onClick={() => document.getElementById('analysis-evidence')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Ver evidencias</button>
+                    <button className="inc-action-btn" onClick={() => setCurrentView('reports')}>Abrir Reportes</button>
+                  </div>
+                </div>
+
+                <div className="analysis-report-grid">
+                  <div className="analysis-classes">
+                    <h3>Clases detectadas</h3>
+                    {Object.entries(recordingReport.summary?.classes || {}).map(([name, count]) => (
+                      <div className="analysis-class-row" key={name}>
+                        <span>{name}</span>
+                        <strong>{count}</strong>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="analysis-timeline" id="analysis-evidence">
+                    <div className="analysis-timeline__header">
+                      <span>Foto</span>
+                      <span>Primera vez</span>
+                      <span>Resultado</span>
+                      <span>Tipo</span>
+                      <span>Duracion</span>
+                      <span>Confirmado</span>
+                      <span>Confianza</span>
+                    </div>
+                    {(recordingReport.timeline || []).map((event, idx) => (
+                      <div className={`analysis-event analysis-event--${event.status}`} key={`${event.id || event.class_name}-${idx}`}>
+                        <span className="analysis-event__shot">
+                          {event.snapshot_path ? <img src={event.snapshot_path} alt="" loading="lazy" /> : I.camera}
+                        </span>
+                        <span className="analysis-event__time">{event.first_seen_label}{event.last_seen_label !== event.first_seen_label ? ` - ${event.last_seen_label}` : ''}</span>
+                        <span>{event.label}</span>
+                        <span>{event.severity}</span>
+                        <span>{event.duration_label || '00:00'}</span>
+                        <span>{event.confirmations}x</span>
+                        <span>{Math.round((event.max_confidence || 0) * 100)}%</span>
+                      </div>
+                    ))}
+                    {(recordingReport.timeline || []).length === 0 && (
+                      <div className="empty-state"><div className="empty-state__text">No se detectaron objetos con el umbral actual</div></div>
+                    )}
+                  </div>
+                </div>
+                </>
+              )}
+            </div>
+          )}
+{/* ════════ DASHBOARD VIEW ════════ */}
           {currentView === 'dashboard' && (
             <>
               <div className="kpi-row">
@@ -794,7 +1010,7 @@ export default function App() {
               </div>
               <div className="bento-grid">
                 <div className="panel dashboard-alerts-panel">
-                  <div className="panel-header"><h2 className="panel-title">Alertas recientes</h2><button className="panel-action" onClick={() => setCurrentView('incidents')}>Ver todas</button></div>
+                  <div className="panel-header"><h2 className="panel-title">Alertas recientes</h2><button className="panel-action" onClick={() => setCurrentView('reports')}>Ver todas</button></div>
                   <div className="panel-body">
                     {pendingAlerts.slice(0,5).map(a => { const ti=TYPE_LABELS[a.type]||{label:a.type,badge:'alert-badge--hardhat',severity:'Media',desc:a.type}; return (
                       <div className="alert-item" key={a.id} onClick={()=>setSelectedAlert(a)}>
@@ -824,11 +1040,11 @@ export default function App() {
                 <div style={{display:'flex',flexDirection:'column',gap:'var(--sp-xl)'}}>
                   <div className="panel panel--compact">
                     <div className="panel-header">
-                        <h2 className="panel-title">Cámaras activas</h2>
+                        <h2 className="panel-title">Grabaciones recientes</h2>
                         <button className="panel-action" onClick={()=>setCurrentView('cameras')}>Ver todas</button>
                       </div>
                     <div className="cameras-mini-grid">
-                      {cameras.slice(0,4).map(c => (
+                      {batchCams.slice(0,4).map(c => (
                         <div className="camera-mini" key={c.id} onClick={() => setFeaturedCamId(c.id)} style={{cursor:'pointer'}}>
                           <div className="camera-mini__feed">
                             {c.status === 'online' ? (
@@ -839,30 +1055,27 @@ export default function App() {
                                   playsInline
                                   loop
                                   preload="metadata"
-                                  onPlay={handleVideoPlay(c.id, c.videoUrl)}
-                                  onPause={handleVideoPause(c.id)}
-                                  onEnded={handleVideoEnded(c.id)}
                                   onMouseEnter={(e) => e.target.play().catch(() => {})}
                                   onMouseLeave={(e) => e.target.pause()}
                                 />
                               ) : (
-                                <span style={{color:'var(--text-muted)',fontSize:'0.7rem'}}>Stream local activo</span>
+                                <span style={{color:'var(--text-muted)',fontSize:'0.7rem'}}>Sin archivo asignado</span>
                               )
                             ) : (
-                              <span style={{color:'var(--text-muted)',fontSize:'0.7rem'}}>Sin señal</span>
+                              <span style={{color:'var(--text-muted)',fontSize:'0.7rem'}}>Sin archivo</span>
                             )}
                           </div>
                           <div className="camera-mini__info">
-                            <span className="camera-mini__name">{c.id} · {c.name.split(' ')[0]}</span>
+                            <span className="camera-mini__name">{c.id} · {c.name}</span>
                             <span className="camera-mini__zone">{c.zone || 'Sin zona'}</span>
-                            <span className={`camera-mini__status camera-mini__status--${c.status}`}>{c.status === 'online' ? 'En línea' : 'Sin señal'}</span>
+                            <span className={`camera-mini__status camera-mini__status--${c.status}`}>{c.status === 'online' ? 'Disponible' : 'Sin archivo'}</span>
                           </div>
                         </div>
                       ))}
                     </div>
                   </div>
                   <div className="panel panel--ghost" style={{flex:1}}>
-                    <div className="panel-header"><h2 className="panel-title">Timeline</h2><button className="panel-action" onClick={() => setCurrentView('incidents')}>Ver todos</button></div>
+                    <div className="panel-header"><h2 className="panel-title">Timeline</h2><button className="panel-action" onClick={() => setCurrentView('reports')}>Ver todos</button></div>
                     <div className="panel-body timeline-list">
                       {pendingAlerts.slice(0,5).map(a=>{const ti=TYPE_LABELS[a.type]||{desc:a.type};const dc=a.type==='NO_HARDHAT'?'timeline-dot--hardhat':a.type==='NO_VEST'?'timeline-dot--vest':'timeline-dot--zone';return(<div className="timeline-item" key={`tl-${a.id}`}><span className={`timeline-dot ${dc}`}></span><span className="timeline-time">{timeAgo(a.timestamp, clockNow)}</span><span className="timeline-desc">{ti.desc}</span><span className="timeline-cam">{a.camera_id}</span></div>)})}
                       {pendingAlerts.length === 0 && <div className="empty-state" style={{margin:'auto'}}><div className="empty-state__text">Sin eventos recientes</div></div>}
@@ -872,111 +1085,7 @@ export default function App() {
               </div>
             </>
           )}
-
-          {/* ════════ INCIDENTS VIEW ════════ */}
-          {currentView === 'incidents' && (
-            <div className="incidents-page">
-              <div className="incidents-page-header">
-                <div>
-                  <h1 className="incidents-page-title">Incidencias activas</h1>
-                  <div className="incidents-page-subtitle">Monitorización en tiempo real de obra <span className="incidents-op-status"><span className="incidents-op-dot"></span>Operativo</span></div>
-                </div>
-                <div className="incidents-page-actions">
-                  <div className="incidents-search">{I.search}<input value={incidentSearch} onChange={(e)=>setIncidentSearch(e.target.value)} type="text" placeholder="Buscar por cámara, zona o tipo..." /></div>
-                  {selectedIncidents.size > 0 && <button className="btn btn--primary btn--sm" style={{background:'var(--color-success)', color:'#fff', border:'none', padding:'8px 16px', borderRadius:'6px', cursor:'pointer'}} onClick={resolveSelectedAlerts}>Resolver seleccionadas ({selectedIncidents.size})</button>}
-                  <button className="btn btn--ghost btn--sm" onClick={clearResolvedAlerts} disabled={kpiResolved === 0}>Eliminar resueltas</button>
-                  <button className="top-bar__action">Salir de zona</button>
-                </div>
-              </div>
-
-              <div className="incidents-kpi-row">
-                <div className="inc-kpi-card"><div className="inc-kpi-label">Pendientes</div><div className="inc-kpi-value">{kpiPending}</div></div>
-                <div className="inc-kpi-card inc-kpi-card--high"><div className="inc-kpi-label">Altas</div><div className="inc-kpi-value">{kpiHigh}</div></div>
-                <div className="inc-kpi-card inc-kpi-card--medium"><div className="inc-kpi-label">Medias</div><div className="inc-kpi-value">{kpiMedium}</div></div>
-                <div className="inc-kpi-card inc-kpi-card--resolved"><div className="inc-kpi-label">Resueltas</div><div className="inc-kpi-value">{kpiResolved}</div></div>
-              </div>
-
-              <div className="incidents-filters-bar">
-                <div className="incidents-tabs">
-                  <button className={`inc-tab ${tab==='pending'?'inc-tab--active':''}`} onClick={()=>setTab('pending')}>Pendientes</button>
-                  <button className={`inc-tab ${tab==='all'?'inc-tab--active':''}`} onClick={()=>setTab('all')}>Todas</button>
-                  <button className={`inc-tab ${tab==='resolved'?'inc-tab--active':''}`} onClick={()=>setTab('resolved')}>Resueltas</button>
-                </div>
-                <div className="incidents-filters-grid">
-                  <select className="inc-filter" value={incidentTypeFilter} onChange={(e)=>setIncidentTypeFilter(e.target.value)}>
-                    <option value="all">Tipo: Todos</option>
-                    {incidentTypeOptions.map(t => <option key={t} value={t}>{TYPE_LABELS[t]?.label || t}</option>)}
-                  </select>
-                  <select className="inc-filter" value={incidentSeverityFilter} onChange={(e)=>setIncidentSeverityFilter(e.target.value)}>
-                    <option value="all">Severidad: Todas</option>
-                    <option value="Alta">Alta</option><option value="Media">Media</option><option value="Baja">Baja</option>
-                  </select>
-                  <select className="inc-filter" value={incidentCameraFilter} onChange={(e)=>setIncidentCameraFilter(e.target.value)}>
-                    <option value="all">Cámara: Todas</option>
-                    {incidentCameraOptions.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                  <select className="inc-filter" value={incidentDateFilter} onChange={(e)=>setIncidentDateFilter(e.target.value)}>
-                    <option value="all">Fecha: Todas</option>
-                    <option value="today">Hoy</option><option value="24h">Últimas 24h</option><option value="7d">Últimos 7 días</option>
-                  </select>
-                  <select className="inc-filter" value={incidentZoneFilter} onChange={(e)=>setIncidentZoneFilter(e.target.value)}>
-                    <option value="all">Zona: Todas</option>
-                    {incidentZoneOptions.map(z => <option key={z} value={z}>{z}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              {prioritizedIncident && (
-                <div className={`incident-priority-card incident-priority-card--${prioritizedIncident.severityKey}`}>
-                  <div className="incident-priority-head">Incidencia prioritaria</div>
-                  <div className="incident-priority-main">
-                    <div className="incident-priority-title">{prioritizedIncident.typeLabel} · {prioritizedIncident.camera_id}</div>
-                    <div className="incident-priority-meta">{prioritizedIncident.zone} · {timeAgo(prioritizedIncident.timestamp, clockNow)} · {formatDateTime(prioritizedIncident.timestamp)}{prioritizedIncident.confidence != null ? ` · ${(prioritizedIncident.confidence * 100).toFixed(1)}% precisión` : ''}</div>
-                  </div>
-                  <button className="btn btn--ghost btn--sm" onClick={() => setSelectedAlert(prioritizedIncident)}>Ver detalle</button>
-                </div>
-              )}
-
-              <div className="panel incidents-list-panel">
-                <div className="panel-header incidents-list-panel__header">
-                  <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
-                    <input type="checkbox" checked={incidentsFiltered.length > 0 && selectedIncidents.size === incidentsFiltered.length} onChange={() => toggleAllIncidents(incidentsFiltered.map(i=>i.id))} style={{cursor:'pointer', transform:'scale(1.2)', accentColor: 'var(--color-accent)'}} title="Seleccionar todas" />
-                    <h2 className="panel-title">Lista operativa de incidencias</h2>
-                  </div>
-                  <div className="incidents-list-count">{incidentsFiltered.length} resultados</div>
-                </div>
-                <div className="panel-body incidents-list-body">
-                  {incidentsFiltered.map((a, idx) => (
-                    <div className={`incident-row ${a.severityKey === 'alta' ? 'incident-row--high' : ''} ${idx === 0 ? 'incident-row--first' : ''}`} key={a.id} onClick={()=>setSelectedAlert(a)}>
-                      <div style={{padding:'0 10px'}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIncidents.has(a.id)} onChange={() => toggleIncidentSelection(a.id)} style={{cursor:'pointer', transform:'scale(1.2)', accentColor: 'var(--color-accent)'}} /></div>
-                      <div className="incident-thumb">{a.snapshot_path ? <img src={a.snapshot_path} alt="" loading="lazy"/> : <div className="incident-thumb-empty">{I.camera}</div>}</div>
-                      <div className="incident-main">
-                        <div className="incident-main-top">
-                          <span className={`incident-type-badge incident-type-badge--${a.severityKey}`}>{a.typeLabel}</span>
-                          <span className={`incident-status-chip ${a.resolved ? 'incident-status-chip--resolved' : 'incident-status-chip--pending'}`}>{a.statusLabel}</span>
-                        </div>
-                        <div className="incident-cam-line"><strong>{a.camera_id}</strong> · {a.zone}</div>
-                        <div className="incident-time-line">{timeAgo(a.timestamp, clockNow)} · {formatDateTime(a.timestamp)}{a.confidence != null ? ` · ${(a.confidence * 100).toFixed(1)}% precisión` : ''}</div>
-                      </div>
-                      <div className="incident-severity-col">
-                        <span className={`incident-severity-badge incident-severity-badge--${a.severityKey}`}>{a.severity}</span>
-                      </div>
-                      <div className="incident-actions" onClick={(e)=>e.stopPropagation()}>
-                        <button className="inc-action-btn" onClick={() => setSelectedAlert(a)}>Ver detalle</button>
-                        {!a.resolved && <button className="inc-action-btn" onClick={() => resolveAlert(a.id, true)}>Resolver</button>}
-                        {a.resolved && <button className="inc-action-btn" onClick={() => resolveAlert(a.id, false)}>Reabrir</button>}
-                        {a.resolved && <button className="inc-action-btn" onClick={() => deleteAlert(a.id)}>Eliminar</button>}
-                        <button className="inc-action-btn" onClick={() => { setFeaturedCamId(a.camera_id); setCurrentView('cameras') }}>Abrir cámara</button>
-                      </div>
-                    </div>
-                  ))}
-                  {incidentsFiltered.length === 0 && <div className="empty-state"><div className="empty-state__text">No hay incidencias con estos filtros</div></div>}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ════════ SETTINGS / REPORTS / ANALYTICS (placeholders) ════════ */}
+{/* ════════ SETTINGS / REPORTS / ANALYTICS (placeholders) ════════ */}
           {currentView === 'settings' && (
             <SettingsConsole
               cameras={cameras}
@@ -986,7 +1095,142 @@ export default function App() {
           )}
 
           {currentView === 'reports' && (
-            <div className="panel" style={{maxWidth:600}}><div className="panel-body"><div className="empty-state" style={{padding:'80px var(--sp-lg)'}}><div className="empty-state__text">Módulo de {viewTitles[currentView]} en desarrollo</div></div></div></div>
+            <div className="reports-page">
+              <div className="reports-sidebar">
+                <div className="reports-sidebar__header">
+                  <div>
+                    <div className="cam-card__label">Historial</div>
+                    <h2>Informes de analisis</h2>
+                  </div>
+                  <span>{analysisReports.length}</span>
+                </div>
+                <div className="reports-list">
+                  {analysisReports.map(item => (
+                    <button
+                      className={`report-list-item ${selectedSavedReport?.id === item.id ? 'report-list-item--active' : ''}`}
+                      key={item.id}
+                      onClick={() => setSelectedReportId(item.id)}
+                    >
+                      <strong>{item.recording?.name || item.recording?.id || 'Grabacion'}</strong>
+                      <span>{item.recording?.id} · {item.recording?.zone || 'Sin zona'}</span>
+                      <small>{formatDateTime(item.created_at)}</small>
+                    </button>
+                  ))}
+                  {analysisReports.length === 0 && (
+                    <div className="empty-state"><div className="empty-state__text">Aun no hay informes generados</div></div>
+                  )}
+                </div>
+              </div>
+
+              {selectedSavedReport ? (
+                <div className="report-detail">
+                  <div className="report-detail__hero">
+                    <div>
+                      <div className="cam-card__label">Informe detallado</div>
+                      <h2>{selectedSavedReport.recording?.name}</h2>
+                      <p>{selectedSavedReport.report?.summary?.smart_summary || 'Analisis completado.'}</p>
+                    </div>
+                    <div className="report-actions">
+                      <button className="inc-action-btn" onClick={() => {
+                        setSelectedRecording(selectedSavedReport.recording)
+                        setRecordingReport(selectedSavedReport.report)
+                        setCurrentView('analysis')
+                      }}>Abrir analisis</button>
+                      <button className="inc-action-btn" onClick={printSelectedReport}>Imprimir / PDF</button>
+                      <button className="inc-action-btn" onClick={exportSelectedReportHtml}>Exportar HTML</button>
+                      <button className="inc-action-btn" onClick={exportSelectedReportCsv}>Exportar CSV</button>
+                    </div>
+                  </div>
+
+                  <div className="report-executive-card">
+                    <div>
+                      <div className="cam-card__label">Resumen ejecutivo</div>
+                      <strong>{selectedSavedReport.report?.summary?.smart_summary || 'Analisis completado.'}</strong>
+                      <p>Documento preparado para revision de seguridad, trazabilidad de evidencias y soporte a auditoria interna.</p>
+                    </div>
+                    <div className={`report-score ${complianceScore < 80 ? 'report-score--risk' : ''}`}>
+                      <span>Cumplimiento</span>
+                      <strong>{complianceScore}%</strong>
+                    </div>
+                  </div>
+
+                  <div className="report-meta-grid">
+                    <div><span>Camara</span><strong>{selectedSavedReport.recording?.id}</strong></div>
+                    <div><span>Zona</span><strong>{selectedSavedReport.recording?.zone || 'Sin zona'}</strong></div>
+                    <div><span>Generado</span><strong>{formatDateTime(selectedSavedReport.created_at)}</strong></div>
+                    <div><span>Archivo</span><strong>{selectedSavedReport.recording?.fileName || 'grabacion.mp4'}</strong></div>
+                  </div>
+
+                  <div className="report-kpi-grid">
+                    <div><span>Duracion</span><strong>{selectedSavedReport.report?.duration_label || '--:--'}</strong></div>
+                    <div className="report-kpi--risk"><span>Riesgos unicos</span><strong>{selectedSavedReport.report?.summary?.unique_risks || 0}</strong></div>
+                    <div><span>Hallazgos</span><strong>{selectedSavedReport.report?.summary?.unique_findings || 0}</strong></div>
+                    <div><span>Detecciones</span><strong>{selectedSavedReport.report?.summary?.detections || 0}</strong></div>
+                  </div>
+
+                  <div className="report-breakdown">
+                    <div className="report-breakdown__header">
+                      <span>Desglose operativo</span>
+                      <strong>{riskTimeline.length} riesgos</strong>
+                    </div>
+                    <div className="report-breakdown__grid">
+                      {Object.entries(selectedSavedReport.report?.summary?.classes || {}).map(([className, count]) => (
+                        <div className={className.startsWith('NO-') || className === 'RESTRICTED_ZONE' ? 'report-breakdown__item report-breakdown__item--risk' : 'report-breakdown__item'} key={className}>
+                          <span>{className}</span>
+                          <strong>{count}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="report-filters">
+                    <div className="report-search">
+                      {I.search}
+                      <input value={reportSearch} onChange={(e) => setReportSearch(e.target.value)} placeholder="Buscar evidencia..." />
+                    </div>
+                    <select value={reportEvidenceFilter} onChange={(e) => setReportEvidenceFilter(e.target.value)}>
+                      <option value="all">Estado: todos</option>
+                      <option value="risk">Solo riesgos</option>
+                      <option value="ok">EPI correcto</option>
+                      <option value="info">Informativo</option>
+                    </select>
+                    <select value={reportClassFilter} onChange={(e) => setReportClassFilter(e.target.value)}>
+                      <option value="all">Clase: todas</option>
+                      {selectedReportClassOptions.map(className => <option key={className} value={className}>{className}</option>)}
+                    </select>
+                    <label className="report-risk-toggle">
+                      <input type="checkbox" checked={reportOnlyRisks} onChange={(e) => setReportOnlyRisks(e.target.checked)} />
+                      <span>Infracciones</span>
+                    </label>
+                    <button className="inc-action-btn" onClick={() => { setReportSearch(''); setReportEvidenceFilter('all'); setReportClassFilter('all'); setReportOnlyRisks(false) }}>Limpiar</button>
+                  </div>
+
+                  <div className="report-results-count">{filteredReportTimeline.length} evidencias visibles de {selectedReportTimeline.length}</div>
+
+                  <div className="report-evidence-grid">
+                    {filteredReportTimeline.map((event, idx) => (
+                      <div className={`report-evidence report-evidence--${event.status}`} key={`${event.id}-${idx}`}>
+                        <div className="report-evidence__image">
+                          {event.snapshot_path ? <img src={event.snapshot_path} alt="" loading="lazy" /> : I.camera}
+                        </div>
+                        <div className="report-evidence__body">
+                          <span>{event.first_seen_label}{event.last_seen_label !== event.first_seen_label ? ` - ${event.last_seen_label}` : ''}</span>
+                          <strong>{event.label}</strong>
+                          <p>{event.severity} · {event.confirmations} confirmaciones · {Math.round((event.max_confidence || 0) * 100)}%</p>
+                        </div>
+                      </div>
+                    ))}
+                    {filteredReportTimeline.length === 0 && (
+                      <div className="empty-state"><div className="empty-state__text">No hay evidencias con estos filtros</div></div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="report-detail report-detail--empty">
+                  <div className="empty-state"><div className="empty-state__text">Analiza una grabacion para generar el primer informe</div></div>
+                </div>
+              )}
+            </div>
           )}
 
           {/* ════════ ZONES (from dashboard link) ════════ */}
@@ -1016,3 +1260,11 @@ export default function App() {
     </div>
   )
 }
+
+
+
+
+
+
+
+

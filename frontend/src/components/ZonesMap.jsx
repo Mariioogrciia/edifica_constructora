@@ -109,6 +109,7 @@ export default function ZonesMap({ mode = 'read-only', zones = [], cameras = [],
   const [zoneDraft, setZoneDraft] = useState({ open: false, mode: 'create', zoneId: null, points: [], name: '', zoneType: 'Central', cameraId: '' });
   const [cameraDraft, setCameraDraft] = useState({ open: false, x: 0, y: 0, zoneName: 'Pendiente', camName: '' });
   const [deleteDraft, setDeleteDraft] = useState({ open: false, kind: '', id: '', label: '' });
+  const [selectedZoneId, setSelectedZoneId] = useState(null);
 
   useEffect(() => {
     setMapCameras(cameras.length ? cameras : INITIAL_CAMERAS)
@@ -375,9 +376,51 @@ export default function ZonesMap({ mode = 'read-only', zones = [], cameras = [],
 
   // Convert relative coordinates back to SVG view space (which is size 0->width, 0->height)
   const toPointsString = (pts) => pts.map(p => `${p.x * imageSize.width},${p.y * imageSize.height}`).join(' ');
+  const selectedZone = zones.find(zone => zone.id === selectedZoneId) || zones[0] || null;
+  const restrictedCount = zones.filter(zone => String(zone.zone_type || zone.type || '').toLowerCase() === 'restringida').length;
+  const cameraCoverage = mapCameras.filter(camera => camera.x != null && camera.y != null).length;
+  const zoneTypeCounts = zones.reduce((acc, zone) => {
+    const type = zone.zone_type || zone.type || 'Central';
+    acc[type] = (acc[type] || 0) + 1;
+    return acc;
+  }, {});
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: mode === 'edit' ? 0 : '400px', background: 'var(--bg-card)', overflow: 'hidden' }}>
+    <div className="zones-command-map" style={{ minHeight: mode === 'edit' ? 0 : '400px' }}>
+      <div className="zones-command-hud">
+        <div>
+          <span>Mapa arquitectonico</span>
+          <strong>Obra Edifica · sectorizacion inteligente</strong>
+        </div>
+        <div className="zones-command-metrics">
+          <div><span>Zonas</span><strong>{zones.length}</strong></div>
+          <div><span>Restringidas</span><strong>{restrictedCount}</strong></div>
+          <div><span>Camaras</span><strong>{cameraCoverage}</strong></div>
+        </div>
+      </div>
+
+      <div className="zones-legend">
+        {Object.entries(zoneTypeCounts).map(([type, count]) => {
+          const style = getZoneStyle(type);
+          return (
+            <div className="zones-legend__item" key={type}>
+              <span style={{ background: style.stroke }}></span>
+              <strong>{type}</strong>
+              <em>{count}</em>
+            </div>
+          );
+        })}
+        {!zones.length && <div className="zones-legend__empty">Sin zonas definidas</div>}
+      </div>
+
+      {selectedZone && (
+        <div className="zones-inspector">
+          <div className="zones-inspector__eyebrow">Zona seleccionada</div>
+          <strong>{selectedZone.name}</strong>
+          <span>{selectedZone.zone_type || selectedZone.type || 'Central'}</span>
+          <p>{selectedZone.camera_id || selectedZone.camera ? `Camara asociada: ${selectedZone.camera_id || selectedZone.camera}` : 'Sin camara asociada'}</p>
+        </div>
+      )}
       
       {/* Tools Panel */}
       {mode === 'edit' && (
@@ -416,19 +459,19 @@ export default function ZonesMap({ mode = 'read-only', zones = [], cameras = [],
 
       {/* Helper text overlay */}
       {mode === 'edit' && activeTool === 'draw' && (
-        <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 10, background: 'rgba(11, 17, 32, 0.9)', padding: '8px 16px', borderRadius: '24px', border: '1px solid var(--color-blue)', fontSize: '0.75rem', color: 'var(--text-primary)', boxShadow: 'var(--shadow-glow-subtle)' }}>
+        <div className="zones-helper zones-helper--blue">
           Haz clic en el mapa para añadir vértices. Haz clic en el punto inicial para cerrar la zona.
         </div>
       )}
 
       {mode === 'edit' && activeTool === 'pan' && !zoneDraft.open && !cameraDraft.open && !deleteDraft.open && (
-        <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 10, background: 'rgba(11, 17, 32, 0.9)', padding: '8px 16px', borderRadius: '24px', border: '1px solid var(--color-warning)', fontSize: '0.75rem', color: 'var(--text-primary)', boxShadow: 'var(--shadow-glow-subtle)' }}>
+        <div className="zones-helper zones-helper--amber">
           Haz clic sobre una zona para editar su nombre, tipo o cámara asociada.
         </div>
       )}
 
       {mode === 'edit' && activeTool === 'camera' && (
-        <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 10, background: 'rgba(11, 17, 32, 0.9)', padding: '8px 16px', borderRadius: '24px', border: '1px solid var(--color-emerald)', fontSize: '0.75rem', color: 'var(--text-primary)', boxShadow: 'var(--shadow-glow-subtle)' }}>
+        <div className="zones-helper zones-helper--green">
           Doble clic para crear cámara. Arrastra para moverla o usa el botón rojo para eliminarla.
         </div>
       )}
@@ -524,14 +567,31 @@ export default function ZonesMap({ mode = 'read-only', zones = [], cameras = [],
               const ys = z.polygon_points.map(p => p.y * imageSize.height);
               const cx = xs.reduce((a, b) => a + b, 0) / xs.length;
               const cy = ys.reduce((a, b) => a + b, 0) / ys.length;
+              const isSelected = selectedZoneId === z.id || (!selectedZoneId && selectedZone?.id === z.id);
 
               return (
-                <g key={z.id} onClick={(e) => mode === 'edit' && activeTool === 'pan' && openZoneEditor(z, e)} style={{ pointerEvents: mode === 'edit' && activeTool === 'pan' ? 'auto' : 'none', cursor: mode === 'edit' && activeTool === 'pan' ? 'pointer' : 'default' }}>
+                <g
+                  key={z.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedZoneId(z.id);
+                    if (mode === 'edit' && activeTool === 'pan') openZoneEditor(z, e);
+                  }}
+                  style={{ pointerEvents: 'auto', cursor: mode === 'edit' && activeTool === 'pan' ? 'pointer' : 'default' }}
+                >
+                  <polygon
+                    points={toPointsString(z.polygon_points)}
+                    fill="transparent"
+                    stroke={zoneStyle.stroke}
+                    strokeOpacity={isSelected ? 0.55 : 0.2}
+                    strokeWidth={(isSelected ? 10 : 5) / transform.scale}
+                    style={{ transition: 'all 0.2s' }}
+                  />
                   <polygon
                     points={toPointsString(z.polygon_points)}
                     fill={zoneStyle.fill}
                     stroke={zoneStyle.stroke}
-                    strokeWidth={2 / transform.scale}
+                    strokeWidth={(isSelected ? 3.5 : 2) / transform.scale}
                     style={{ transition: 'all 0.2s' }}
                   />
                   {z.polygon_points.map((p, i) => (
@@ -540,7 +600,7 @@ export default function ZonesMap({ mode = 'read-only', zones = [], cameras = [],
                   
                   {/* Etiqueta de la zona */}
                   <g transform={`translate(${cx}, ${cy})`}>
-                    <rect x={-72/transform.scale} y={-18/transform.scale} width={144/transform.scale} height={36/transform.scale} rx={4/transform.scale} fill="rgba(11, 17, 32, 0.82)" />
+                    <rect x={-82/transform.scale} y={-20/transform.scale} width={164/transform.scale} height={40/transform.scale} rx={6/transform.scale} fill="rgba(8, 12, 18, 0.88)" stroke={zoneStyle.stroke} strokeOpacity="0.55" strokeWidth={1/transform.scale} />
                     <text x="0" y={-2/transform.scale} fill="#fff" fontSize={11 / transform.scale} fontWeight="700" textAnchor="middle">
                       {z.name} · {zoneType}
                     </text>
@@ -595,6 +655,7 @@ export default function ZonesMap({ mode = 'read-only', zones = [], cameras = [],
                     }
                   }}
                 >
+                  <circle cx="0" cy="0" r={32 / transform.scale} fill="none" stroke="var(--color-emerald)" strokeOpacity="0.22" strokeWidth={1.5 / transform.scale} />
                   <circle cx="0" cy="0" r={16 / transform.scale} fill="rgba(11, 17, 32, 0.9)" stroke="var(--color-emerald)" strokeWidth={2 / transform.scale} filter="url(#glow)" />
                   <path d={`M${-8/transform.scale} ${-5/transform.scale} h${16/transform.scale} v${10/transform.scale} h${-16/transform.scale} z`} fill="var(--color-emerald)" />
                   <circle cx="0" cy="0" r={3 / transform.scale} fill="#fff" />
@@ -623,6 +684,23 @@ export default function ZonesMap({ mode = 'read-only', zones = [], cameras = [],
             })}
           </svg>
         </div>
+      </div>
+
+      <div className="zones-camera-rail">
+        {mapCameras.map(camera => (
+          <button
+            key={camera.id}
+            className="zones-camera-chip"
+            onClick={() => setTransform(prev => ({
+              ...prev,
+              x: (containerRef.current?.clientWidth || 0) / 2 - camera.x * imageSize.width * prev.scale,
+              y: (containerRef.current?.clientHeight || 0) / 2 - camera.y * imageSize.height * prev.scale,
+            }))}
+          >
+            {I.camera}
+            <span>{camera.id}</span>
+          </button>
+        ))}
       </div>
       
       {/* Inject custom CSS for tools */}
